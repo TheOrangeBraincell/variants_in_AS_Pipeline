@@ -31,6 +31,7 @@ samtools view -h -o alignment.sam alignment.bam
 ```shell
 /usr/local/packages/hisat/2.1.0/bin/hisat2-align-s --wrapper basic-0 -p 16 -q --fr --phred33 -t --dta --dta-cufflink --new-summary --non-deterministic --novel-splicesite-outfile aligned/splicesites.tsv --rna-strandness RF --summary-file aligned/summary.txt --rg PL:Illumina --rg CN:SCANB-prim --rg-id S000001.l.r.m.c.lib.g --rg PU:C1PCYACXXD1U1NACXX --rg SM:S000001 --rg LB:S000001.l.r.m.c.lib -x /reference/hg38/hg38.analysisSet_gencode27_snp150/genome_snp_tran --passthrough -1 /tmp/9982.inpipe1 -2 /tmp/9982.inpipe2" 
 ```
+<p>
 Understanding it:
 hisat2-align: executable alignment script.
 --wrapper:
@@ -49,7 +50,7 @@ hisat2-align: executable alignment script.
 --passthrough
 --novel-splicesite-outfile: reports a list of splicesites in the specified tsv file.
 -x specify index file.
-
+<p>
 ```shell
 @PG     ID:MarkDuplicates       PN:MarkDuplicates       VN:1.128-4(154e938885f271b2744d8d24fa22810a54752c8e_1424761755) CL:picard.sam.markduplicates.MarkDuplicates MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=2000 INPUT=[aligned/alignment.bam] OUTPUT=aligned/alignment.bam.tmp_picard METRICS_FILE=aligned/alignment_picardmetrics.csv REMOVE_DUPLICATES=false ASSUME_SORTED=true VERBOSITY=WARNING QUIET=true    MAX_SEQUENCES_FOR_DISK_READ_ENDS_MAP=50000 SORTING_COLLECTION_SIZE_RATIO=0.25 PROGRAM_RECORD_ID=MarkDuplicates PROGRAM_GROUP_NAME=MarkDuplicates DUPLICATE_SCORING_STRATEGY=SUM_OF_BASE_QUALITIES READ_NAME_REGEX=[a-zA-Z0-9]+:[0-9]:([0-9]+):([0-9]+):([0-9]+).* OPTICAL_DUPLICATE_PIXEL_DISTANCE=100 VALIDATION_STRINGENCY=STRICT COMPRESSION_LEVEL=5 MAX_RECORDS_IN_RAM=500000 CREATE_INDEX=false CREATE_MD5_FILE=false
 ```
@@ -60,3 +61,11 @@ To figure out what they are, you used:
 https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&chromInfoPage= (scaffold list for hg38)
 https://www.gencodegenes.org/human/ (To download corresponding gff3 file, used PRI due to scaffolds used for alignment)
 http://gmod.org/wiki/GFF3 (more on the gff3 format, that we just downloaded the annotation file in.)
+
+  Extract one gene to try out a few things:
+  
+  ```shell
+  samtools view -h -o gene_DDX11L1.sam alignment.bam "chr1:11869-14409"
+  ```
+  
+  Made a first python script to attempt extracting splicing sites corresponding to this gene and compare them to the exons of this gene found in the gff file.
