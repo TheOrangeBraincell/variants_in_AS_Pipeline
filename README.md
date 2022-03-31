@@ -69,3 +69,12 @@ http://gmod.org/wiki/GFF3 (more on the gff3 format, that we just downloaded the 
   ```
   
   Made a first python script to attempt extracting splicing sites corresponding to this gene and compare them to the exons of this gene found in the gff file.
+
+ ## 30.03.22
+  Continued working on script.
+  
+## 31.03.22
+  Same but for estrogen recepter: ESR1 gene. This way we can compare it to helenas output.
+  ```shell
+    samtools view -h -o gene_ESR1.sam alignment.bam "chr6:151690496-152103274"
+  ```
