@@ -8,11 +8,6 @@ author: Mirjam Karlsson-Müller
 """
 
 
-
-
-#input: BAM file, GFF3 file.
-#output: file with common splicesites, and unique ones to each source.
-
 #%%
 "1. For now: Take sam file, find unique splice sites:"
 
@@ -27,8 +22,8 @@ parser = argparse.ArgumentParser(prog='Find Splicesites',
 parser.add_argument('--bamfile', '-b', 
                     help='BAM file, containing alignment information.')
 
-parser.add_argument('--gff', '-g',
-                    help='GFF3 file, containing annotation for genome in question.')
+parser.add_argument('--database', '-db',
+                    help='BED file containing already known/annotated splice junctions from the ucsc.')
 parser.add_argument('--out', '-o',
                     help='Output bed file, where comparison data should be printed to.')
 
@@ -89,34 +84,70 @@ if args.bamfile:
                             #If the whole junction is in range (only works for ESR1 atm)
                             if exon1_end>151625000 and exon2_start<152103274:
                                 #Generate data for bed file
-                                score=0
-                                RGB="RGB"
-                                exon_count="2,2"
+                                exon_count="1,1"
                                 block_sizes="tbd"
+                                #Flag for being in database, default =False
+                                in_db=False
                                 name=str(exon1_end)+"_"+str(exon2_start)
                                 #The plus for strand is given rn due to it running only for ESR1. Adjust later with "reads", l68
-                                splicesite[name]=[chrom, exon1_end-1, exon2_start, score, "+",
-                                                  RGB, exon_count, block_sizes, "0,"+str(exon2_start-exon1_end)]
+                                splicesite[name]=[chrom, exon1_end-1, exon2_start, "+",
+                                                  exon_count, block_sizes, "0,"+str(exon2_start-exon1_end), in_db]
+                                
                         #remove used part of the string
-                        current_cigar=re.sub(r'^.*?N','N', current_cigar).lstrip("N")
+                        current_cigar=re.sub(r'^.*?N','N', 
+                                             current_cigar).lstrip("N")
                         current_length+=exon2_start
+#%%
+"2. Read in known splice junctions for corresponding region."
+
+db_junctions=dict()
+with open(args.database, 'r') as db:
+    for line in db:
+        #To exclude potential title lines/empty lines, formatting mistakes
+        if bool(re.search(r"([a-z]{3}[X,M,Y]?\d*)(?:.+[random]{6})?\t(\d+)\t(\d+)\t([A-Z]+\d+\.*\d*)\t0\t(\-?\+?)\t\d+\t\d+\t0\t(\d+)\t([\d,]+)\t([\d,]+)", line))==True:
+            entry=re.search(r"([a-z]{3}[X,M,Y]?\d*)(?:.+[random]{6})?\t(\d+)\t(\d+)\t([A-Z]+\d+\.*\d*)\t0\t(\-?\+?)\t\d+\t\d+\t0\t(\d+)\t([\d,]+)\t([\d,]+)", line)
+            chrom=entry.group(1)
+            start=entry.group(2)
+            stop=entry.group(3)
+            gene_name=entry.group(4)
+            strand=entry.group(5)
+            number_exons=entry.group(6)
+            exon_size=entry.group(7)
+            rel_start=entry.group(8)
+            name=str(int(start)+1)+"_"+stop
+            db_junctions[name]=[chrom, start, stop, gene_name, strand, number_exons, exon_size, rel_start]
 
 
+  
+#%%
 
-"Write the results in BED file"
+"3. Write the results in BED file"
 with open(args.out, 'w') as out:
     out.write("\n\n")
-    counter=0
-    for name in sorted(splicesite):
+    #iterate through junctions in ucsc file
+    for name in db_junctions:
+        if name in splicesite:
+            RGB=0,0,255
+            splicesite[name][7]=True
+        else:
+            RGB=0,255,0
         #estrogen is on + strand, so we exclude - for now.
-        #if splicesite[name][4]=="+":
-        out.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
-            splicesite[name][0],splicesite[name][1], splicesite[name][2], name, 
-            splicesite[name][3], splicesite[name][4], splicesite[name][1], splicesite[name][2],
-            splicesite[name][5], splicesite[name][6], splicesite[name][7], splicesite[name][8]))
-        counter+=1
+        if db_junctions[name][4]=="+" and db_junctions[name][0]=="chr6" and int(db_junctions[name][1])>151625000 and int(db_junctions[name][2])<152103274:
+                out.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
+                    db_junctions[name][0], db_junctions[name][1], db_junctions[name][2],
+                    db_junctions[name][3], 0, db_junctions[name][4], db_junctions[name][1],
+                    db_junctions[name][2], RGB, db_junctions[name][5], db_junctions[name][6],
+                    db_junctions[name][7]))
+    #add new ones.
+    for name in splicesite:
+        if splicesite[name][7]==False:
+            RGB=255,0,0
+            out.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
+                splicesite[name][0], splicesite[name][1], splicesite[name][2], name,
+                0, splicesite[name][3], splicesite[name][1], splicesite[name][2], RGB,
+                splicesite[name][4], splicesite[name][5], splicesite[name][6]))    
 
         
                 
-            
+
                                 
