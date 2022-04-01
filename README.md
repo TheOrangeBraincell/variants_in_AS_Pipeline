@@ -90,3 +90,5 @@ http://gmod.org/wiki/GFF3 (more on the gff3 format, that we just downloaded the 
 The script now detects the splice junctions of the estrogen receptor, using a BAM file as input. It produces a BED file, though some columns have no value yet, as the comparison to known splice junctions is not done yet.
 What it lacks is generalization for other genes, chromosomes, genomes as well as the comparison to known splice junctions using the ucsc bed file containing gene predictions.
 So the next step is to implement the comparison.
+Which i tried, see file submission from 1.4. afternoon, but it is not working well yet. 
+  
