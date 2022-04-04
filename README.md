@@ -91,4 +91,15 @@ The script now detects the splice junctions of the estrogen receptor, using a BA
 What it lacks is generalization for other genes, chromosomes, genomes as well as the comparison to known splice junctions using the ucsc bed file containing gene predictions.
 So the next step is to implement the comparison.
 Which i tried, see file submission from 1.4. afternoon, but it is not working well yet. 
-  
+
+## 04.04.22
+The splicesites_in_bam.py is now working for extracting the splicesites for ESR1 from the bam file, as well as extracting the splicesites predicted from ucsc and comparing the two. The block size for the novel splice sites is set to 1,1, as we cannot make an accurate prediction based on the alignment data.
+Red bed entries are novel, green are only predicted not found, and blue are predicted and found. A table with 26 entries was made this way.
+
+Still to do:
+  - Implement for reverse strand
+  - allow coordinate input (so it works for other genes than ESR1 but also for the whole genome.
+  - Document
+  - title of BED file
+  - document code
+  - Read up on PSI (monikas report)
