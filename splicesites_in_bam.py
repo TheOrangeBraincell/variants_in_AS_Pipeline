@@ -126,9 +126,12 @@ if args.bamfile:
                                         #Generate data for bed file
                                         exon_count="2"
                                         block_sizes="1,1"
-                                        #Flag for being in database, default =False
-                                        in_db=False
                                         name=str(exon1_end -1)+"_"+str(exon2_start)
+                                        #Exclude non-primary alignments:
+                                        if len(bin(int(flag)))>=11:
+                                            #Non-primary has flag 256. 
+                                            if str(bin(int(flag)))[-9]=="1":
+                                                continue
                                         strand=which_strand(flag)
                                         if name in read_counts_junction:
                                             if strand=="-":
@@ -238,7 +241,7 @@ with open(args.database, 'r') as db:
                                         exon_size[i:i+2], curr_rel_start]
                     
 """if we are only interested in a gene, find out which strand it is on,
-by checking on what strand the majority of the splice junctions on this
+by checking on what strand the majority of the known splice junctions on this
 region is."""
 plus_count=0
 minus_count=0
