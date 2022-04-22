@@ -94,6 +94,7 @@ Which i tried, see file submission from 1.4. afternoon, but it is not working we
 
 ## 04.04.22
 The splicesites_in_bam.py is now working for extracting the splicesites for ESR1 from the bam file, as well as extracting the splicesites predicted from ucsc and comparing the two. The block size for the novel splice sites is set to 1,1, as we cannot make an accurate prediction based on the alignment data.
+  
 Red bed entries are novel, green are only predicted not found, and blue are predicted and found. A table with 26 entries was made this way.
 
 Still to do:
@@ -103,3 +104,21 @@ Still to do:
   - title of BED file
   - document code
   - Read up on PSI (monikas report)
+
+##11.04.22
+The splicesites_in bam has been rewritten to splice_junctions.py. It now works for genes (given by chromosome+coordinates) as well as for the whole genome and produces a comparison bed file. An attempt has been made in the same script to classify splice junctions found in the gencode bed file, but since this part is currently not in use, it is commented out.
+  
+The script is run with:
+```shell
+python splice_junctions.py -b alignment.bam -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690496-152103274"
+```
+  
+#22.04.22
+New script that finds alternative splicing events in the gencode bed file and then finds how many reads they have in the bam file and calculates psi scores for each event. Rn this is only implemented for Casette exons.
+
+It is again runable on a region, or on the total genome.
+runs with:
+  
+```shell
+python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt
+```
