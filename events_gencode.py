@@ -329,30 +329,42 @@ for gene_id in gene_exons:
     gene_exons[gene_id] = gene_exons[gene_id][0:-1]
     chrom=gene_exons[gene_id][0][0]
     
-    
-    
-    #Open bam file at the coordinates of this gene. returns iterable.
-    samfile_fetch=samfile.fetch(chrom, start_first_exon, stop_last_exon)
+    #Title for new gene, so they are clearly seperated in outputfile
+    out.write("# gene id: {} \n".format(gene_id))
     #iterate through exons of gene
     for exons in gene_exons[gene_id]:
-        print(exons)
         #initiate count values:
         junction3=0
         junction5=0
         splice_junction=0
+        #reset read dictionary
+        read_dict=dict()
+        #Open bam file at the coordinates of this gene. returns iterable.
+        samfile_fetch=samfile.fetch(chrom, start_first_exon, stop_last_exon)
         #iterate through reads at gene's location:
         for read in samfile_fetch:
             #turn into string object.
             read_str=read.to_string()
             if re.search(r'\d+M\d+N\d+M', read.cigarstring):
+                name=read.query_name
                 cigar=read.cigarstring
-                start=read.reference_start
-                chrom=read_str.split("\t")[2]
+                start=int(read.reference_start)
+                chrom=read.reference_name
+                read_length=read.infer_query_length()
                 
                 "Filtering pt 1"
                 # Exclude non-primary alignments
                 if read.is_secondary:
                     continue
+                #exclude second read of pair, if maps to overlapping region.
+                #works for plus.
+                if name in read_dict:
+                    if read_dict[name][0]<=start<=read_dict[name][1] or \
+                    read_dict[name][0]<=start+read_length<=read_dict[name][1]:
+                        print("excluded second read!")
+                        continue
+                else:
+                    read_dict[name]=[start, start+read_length]
                 
                 "get strand information"
                 if read.mate_is_reverse and read.is_read1:
@@ -392,13 +404,10 @@ for gene_id in gene_exons:
                     "Count: this is for forward string"
                     #print(exon1_end, exons[1], exon2_start, exons[2])
                     if exon1_end < exons[1] and exon2_start>exons[2]:
-                        print("case1")
                         splice_junction+=1
                     elif exon1_end<exons[1] and exons[1]<exon2_end<exons[2]:
-                        print("case2")
                         junction5+=1
                     elif exon2_end>exons[2] and exons[1]<exon1_start<exons[2]:
-                        print("case3")
                         junction3+=1
                     
                     # update cigar string
@@ -411,7 +420,7 @@ for gene_id in gene_exons:
             PSI="NAN"
         else:
             PSI=(junction5+junction3)/(junction5+junction3+splice_junction)
-        out.write("{}\t{}\n".format(str(exons[1])+"_"+str(exons[2]), PSI))
+        out.write("{}\t{}\n".format(exons[0]+"_"+str(exons[1])+"_"+str(exons[2]), PSI))
         
 out.close       
         
