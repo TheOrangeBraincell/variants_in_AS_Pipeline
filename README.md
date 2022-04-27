@@ -105,7 +105,7 @@ Still to do:
   - document code
   - Read up on PSI (monikas report)
 
-##11.04.22
+## 11.04.22
 The splicesites_in bam has been rewritten to splice_junctions.py. It now works for genes (given by chromosome+coordinates) as well as for the whole genome and produces a comparison bed file. An attempt has been made in the same script to classify splice junctions found in the gencode bed file, but since this part is currently not in use, it is commented out.
   
 The script is run with:
@@ -127,3 +127,5 @@ python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38
 opening the bam file in the events_gencode script is now done with pysam instead of a subprocess, as running the linux subprocess (samtools) got killed when not inputing coordinates. It should also be replaced in the splice_junctions script. 
   
 Still no reasonable PSI scores. Problems with the iteration.
+  
+The splice_junction script now also uses pysam instead of subprocess.
