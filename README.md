@@ -128,4 +128,6 @@ opening the bam file in the events_gencode script is now done with pysam instead
   
 Still no reasonable PSI scores. Problems with the iteration.
   
-The splice_junction script now also uses pysam instead of subprocess.
+Update: The splice_junction script now also uses pysam instead of subprocess.
+  
+Update 2: The events_gencode script now excludes second reads of read pairs mapping to the same junction from the counts for PSI scores.
