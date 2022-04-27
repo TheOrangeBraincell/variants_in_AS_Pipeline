@@ -113,8 +113,8 @@ The script is run with:
 python splice_junctions.py -b alignment.bam -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690496-152103274"
 ```
   
-#22.04.22
-New script that finds alternative splicing events in the gencode bed file and then finds how many reads they have in the bam file and calculates psi scores for each event. Rn this is only implemented for Casette exons.
+## 22.04.22
+New script that finds alternative splicing events in the gencode bed file and then finds how many reads they have in the bam file and calculates psi scores for each event. Rn this is only implemented for Casette exons. The Psi scores dont work yet.
 
 It is again runable on a region, or on the total genome.
 runs with:
@@ -122,3 +122,8 @@ runs with:
 ```shell
 python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt
 ```
+
+## 27.04.22
+opening the bam file in the events_gencode script is now done with pysam instead of a subprocess, as running the linux subprocess (samtools) got killed when not inputing coordinates. It should also be replaced in the splice_junctions script. 
+  
+Still no reasonable PSI scores. Problems with the iteration.
