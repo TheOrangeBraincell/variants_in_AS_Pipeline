@@ -8,7 +8,7 @@ Created on Thu Apr  7 15:18:11 2022
 
 import argparse
 import re
-import subprocess
+import pysam
 
 #%%
 "Functions"
@@ -65,6 +65,10 @@ if args.coordinates:
 "2a. Reading in ucsc bed file into a dictionary"
 
 db_junctions=dict()
+# exons_plus=[]
+# exons_minus=[]
+# #introns_plus=[]
+# #introns_minus=[]
 with open(args.database, 'r') as db:
     for line in db:
         #To exclude potential title lines/empty lines, formatting mistakes
@@ -94,8 +98,19 @@ with open(args.database, 'r') as db:
             rel_start=rel_start.split(",")
             current_start=start
             for i in range(0, int(number_exons)-1):
+                #exon1_start=current_start+1
                 exon1_end=current_start+int(exon_size[i])-1
                 exon2_start=start+int(rel_start[i+1])+1
+                #exon2_end=exon2_start+exon_size[i+1]-1
+                "For 5."
+                # #Make exon/intron lists, seperately per strand.
+                # if strand=="-":
+                #     exons_minus.append([exon1_end-1, exon1_start-1],
+                #                        [exon2_end-1, exon2_start-1])
+                #     #introns_minus.append([exon1_start-1, exon2_end-1])
+                # else:
+                #     exons_plus.append([exon1_start, exon1_end], [exon2_start, exon2_end])
+                #     #introns_plus.append([exon1_end+1, exon2_start-1, strand])
                 """if we have input coordinates, check if the exons are in the 
                 right region. If they arent, skip them."""
                 if args.coordinates:
@@ -143,7 +158,7 @@ if args.coordinates:
         del db_junctions[name]
 
 
-#%%
+#%% Identify splicesites in bam file
 """3. Identify splicesites in bam file."""
 
 "3a. Read in information"
@@ -157,19 +172,11 @@ read_counts_junction=dict()
 
 #Transform bam file into samfile:
 if args.bamfile:
+    sam=pysam.AlignmentFile(args.bamfile, "rb")
     if args.coordinates:
-        command=['samtools','view','-h','-F','0x100', args.bamfile,
-                 args.coordinates]
-    else:
-        command=['samtools','view','-h','-F','0x100', args.bamfile]
-    p=subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, 
-                       stderr=subprocess.STDOUT)
-    output=p.communicate(input=args.bamfile.encode())[0]
-    sam=output.decode('utf-8')
-    
-    #Iterate through lines in sam file:
-    sam=sam.split("\n")
+        sam=sam.fetch(coord_chrom, coord_start, coord_stop)
     for line in sam:
+        line=line.to_string()
         if line.startswith("@"):
             continue
         #if the line follows the pattern containing one or more splice junctions:
@@ -194,7 +201,6 @@ if args.bamfile:
             current_cigar=cigar
             current_length=0
             while bool(re.search(pattern_junction, current_cigar))==True:
-                print(current_cigar)
                 junction=re.search(r'(\d+)M(\d+)N(\d+)M',current_cigar)
                 exon1=int(junction.group(1))
                 intron=int(junction.group(2))
@@ -260,14 +266,14 @@ for name in read_counts_junction:
 """
 
 "3b Check for each junction, on which strand the majority of its reads lays"
-print("done with sam")
+
 for name in read_junction:
     if read_counts_junction[name][0]>read_counts_junction[name][1]:
         read_junction[name][3]="+"
     else:
         read_junction[name][3]="-"
         
-#%%
+#%% Write bed output with known and novel splicesites.
             
 """4. Summarize both dictionaries into a table of splice junctions, into bed 
 format. Note that to be able to display the bed file in the genome browser,
@@ -318,8 +324,106 @@ with open(args.out, 'w') as out:
 
 
 
+#%% Classifying annotated splice junctions (Commented because atm not used.)
+
+# """5. To classify novel splice junctions, we want to create a dataset
+# with information about the annotated splice junctions"""
+
+# #From the exons and introns lists in 2.
+
+# "5a. classify AA and AD"
+
+# def AA_AD(exons):
+#     """ finds alternative donors and acceptors using a list of exon 
+#     coordinates. The output will be written into two dictionaries."""
+#     starts=set()
+#     ends=set()
+#     aa=dict()
+#     ad=dict()
+#     for coordinates in exons:
+#         current_start=coordinates[0]
+#         current_end=coordinates[1]
+#         if current_end in ends:
+#             #ad found!
+#             if current_end in ad and current_start in ad[current_end]:
+#                 continue
+#             elif current_end in ad:
+#                 ad[current_end].append(current_start)
+#             else:
+#                 ad[current_end]=[current_start]
+#                 #also add pair with which the end matched.
+#                 ad[current_end].append(coor[0] for coor in exons if 
+#                                        coor[1]==current_end)
+#         elif current_start in starts:
+#             #aa found!
+#             if current_start in aa and current_end in aa[current_start]:
+#                 continue
+#             elif current_start in aa:
+#                 aa[current_start].append(current_end)
+#             else:
+#                 aa[current_start]=[current_end]
+#                 #also add pair with which the start matched.
+#                 aa[current_start].append(coor[1] for coor in exons if
+#                                          coor[0]==current_start)
+#         starts.add(current_start)
+#         ends.add(current_end)
+#     return aa, ad, starts, ends
+
+# "For positive strand"
+# aa_plus, ad_plus, starts_plus, ends_plus=AA_AD(exons_plus)
+
+# "For negative strand"
+# aa_minus, ad_minus, starts_minus, ends_minus=AA_AD(exons_minus)
 
 
+    
+# "5b. classify CE"
+# #based on introns lists.
+
+# "positive strand"
+# ce_plus=dict()
+# for starts, ends in zip(starts_plus, ends_plus):
+#     if starts>introns_plus[0] and ends<introns_plus[1]:
+#         #CE found.
+#         ce_plus[starts]=ends
+
+# "negative strand"
+# ce_minus=dict()
+# for starts, ends in zip(starts_minus, ends_minus):
+#     if starts < introns_minus[0] and ends>introns_minus[1]:
+#         #CE found
+#         ce_plus[starts]=ends
+
+
+
+# "5c write results into output file"
+
+# """
+# #output sorted by starting position of junction (or lowest starting position.)
+
+# #idk how to do this elegantly. so we gonna do it on tuesday ._.  
+# #merging dictionaries doesnt work, starts might be included in different SE.
+# #Start list, sorted? Then check for each of the 6 dictionaries if it is in,
+# #if yes, write it to annotate file. That would be a lot of code though. 
+
+# #also i did not save chromosome or strand info with it... only exons. 
+# #wait. my dictionaries of aa, and ad only contain exons. not junctions. 
+# #just exons..... so i classified exons, not splice junctions.
+# #is that what i want?
+
+# #should i link the exon classification to the splice junction the exon is
+# #involved in?
+# what if two exons involved in one splice junction are classified differently? 
+# # can i classify the splice junctions directly? Follow up in lab journal..
+# """
+
+# with open("annotate.txt", 'w') as annotate:
+#     annotate.write("#Chrom\tstart(s)\tstop(s)\tstrand\ttype")
+
+
+
+
+        
 
 
 
