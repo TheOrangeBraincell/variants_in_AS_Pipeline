@@ -17,6 +17,14 @@ retention.
 
 python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690496-152103274"
 
+go more generous on the coordinates.
+
+python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690000-15210000"
+
+but if we go too generous on the coordinates, we might find things on the wrong strand.
+Though this is only based on gencode, and it would tell us if a transcript would 
+belong to a different gene. So for now it isnt a problem.  
+But it might become one when we include novel junctions. keep that in mind.  
 
 """
 
@@ -71,7 +79,7 @@ if args.coordinates:
 gene_dict = dict()
 with open(args.gencode, "r") as gene:
     for line in gene:
-        if bool(re.search("(.+)\t([a-z]{3}\d*[X,M,Y]*)\t(.{1})\t(.+)", line)) == True:
+        if re.search("(.+)\t([a-z]{3}\d*[X,M,Y]*)\t(.{1})\t(.+)", line):
             entry = re.search(
                 "(.+)\t([a-z]{3}\d*[X,M,Y]*)\t(.{1})\t(.+)", line)
             transcript_id = entry.group(1)
@@ -79,7 +87,7 @@ with open(args.gencode, "r") as gene:
 
             # If only looking for a region, only look at corresponding chrom
             if args.coordinates:
-                if entry.group(2) != args.coordinates.split(":")[0]:
+                if entry.group(2) != coord_chrom:
                     continue
 
                 else:
@@ -95,6 +103,8 @@ with open(args.gencode, "r") as gene:
                     gene_dict[gene_id] = [transcript_id]
 
 print("1 done")
+#print(gene_dict)
+#here we still have all trans_ids per chromosome.
 
 # %% 2. Extract exons from gencode bed file
 """  """
@@ -104,44 +114,119 @@ with open(args.database, "r") as database:
     for line in database:
         # To exclude potential title lines/empty lines, formatting mistakes
         # Only takes chr[] and chr[]_random lines, in accordance with bam.
-        if bool(re.search(r"([a-z]{3}[X,M,Y]?\d*)\t(\d+)\t(\d+)\t([A-Z]+\d+"
-                          r".*\d*)\t0\t(\-?\+?)\t\d+\t\d+\t0\t(\d+)\t([\d,]+)"
-                          r"\t([\d,]+)", line)) == True or bool(re.search(
-                              r"([a-z]{3}[X,M,Y]?\d*).+_random\t(\d+)\t(\d+)\t"
-                              r"([A-Z]+\d+\.*\d*)\t0\t(\-?\+?)\t\d+\t\d+\t0\t"
-                              r"(\d+)\t([\d,]+)\t([\d,]+)", line)) == True:
+        if re.search(r"(?:([a-z]{3}[X,M,Y]?\d*)|([a-z]{3}[X,M,Y]?\d*).+_random)"
+                     r"\t(\d+)\t(\d+)\t([A-Z]+\d+.*\d*)\t0\t(\-?\+?)\t\d+\t\d+"
+                     r"\t0\t(\d+)\t([\d,]+)\t([\d,]+)", line):
             # specify what the groups in the line correspond to.
             entry = re.search(r"([a-z]{3}[X,M,Y]?\d*).*\t(\d+)"
                               r"\t(\d+)\t([A-Z]+\d+\.*\d*)\t0\t(\-?\+?)\t\d+\t"
                               r"\d+\t0\t(\d+)\t([\d,]+)\t([\d,]+)", line)
-            chrom = entry.group(1)
-            start = int(entry.group(2))
-            stop = entry.group(3)
-            trans_name = entry.group(4)
+            
             strand = entry.group(5)
+            chrom = entry.group(1)
+            trans_name = entry.group(4)
             number_exons = entry.group(6)
             exon_size = entry.group(7)
-            rel_start = entry.group(8)
             
-            #If coordinates are given, we only want entries within.
+            """Defining "smaller" and "bigger" coordinate for each exon,
+            depending on strand, dictionary gets fixed 
+            [chrom, smaller, bigger, strand] instead of confusing start and
+            stop"""
+            
+            small=int(entry.group(2))
+            big=int(entry.group(3))
+            
+            #Exclude entries outside of coordinates, if given.
             if args.coordinates:
-                if int(start)<coord_start or int(stop) >coord_stop or chrom != coord_chrom:
+                if small<coord_start or big>coord_stop or chrom!=coord_chrom:
                     continue
+            
             # We are interested in the single exons of each entry.
+            rel_small=entry.group(8)
             size_list = exon_size.split(",")
-            start_list = rel_start.split(",")
-            current_start = start
-
+            small_list = rel_small.split(",")
+            
+            
             for i in range(0, int(number_exons)-1):
-                exon_start = current_start+1
-                exon_end = current_start+int(size_list[i])-1
-
+                if strand=="+":
+                    current_start=small+int(small_list[i])
+                    exon_start=current_start
+                    exon_end=current_start+int(size_list[i])+1
+                    exon_cor=[exon_start, exon_end]
+                
+                if strand=="-":
+                    current_stop=small+int(small_list[i]) 
+                    exon_end = current_stop-1 
+                    exon_start = current_stop+int(size_list[i])+1 #exon start
+                    exon_cor=[exon_end, exon_start] #so that smaller, bigger
+                
+                #append exon to dictionary
                 if trans_name in transID_exons:
-                    transID_exons[trans_name].append([chrom,exon_start, exon_end,0])
+                    transID_exons[trans_name].append([chrom, exon_cor[0], 
+                                                      exon_cor[1], strand])
                 else:
-                    transID_exons[trans_name] = [[chrom,exon_start, exon_end,0]]
+                    transID_exons[trans_name] = [[chrom, exon_cor[0], 
+                                                  exon_cor[1], strand]]
+            """
+            if strand=="+":
+                start = int(entry.group(2))
+                stop = entry.group(3)
+                rel_start = entry.group(8)
+                
+                #If coordinates are given, we only want entries within.
+                if args.coordinates:
+                    if int(start)<coord_start or int(stop) >coord_stop or \
+                        chrom != coord_chrom:
+                        continue
+                # We are interested in the single exons of each entry.
+                size_list = exon_size.split(",")
+                start_list = rel_start.split(",")
+                    
+                #interest in exons. Thus start inclusive, end exclusive.
+                for i in range(0, int(number_exons)-1):
+                    current_start=start+start_list[i]
+                    exon_start = current_start
+                    exon_end = current_start+int(size_list[i])+1
+                    
+                    if trans_name in transID_exons:
+                        transID_exons[trans_name].append([chrom, exon_start, 
+                                                          exon_end, strand])
+                    else:
+                        transID_exons[trans_name] = [[chrom, exon_start, 
+                                                      exon_end, strand]]
+            
+            if strand=="-":
+                stop=int(entry.group(2)) #stop since reverse
+                start=int(entry.group(3)) #start since -
+                rel_stop=entry.group(8) #list of stop codons.
+                
+                #If coordinates are given, we only want entries within.
+                #print(start, coord_stop)
+                if args.coordinates:
+                    if start>coord_stop or stop <coord_start or  \
+                        chrom != coord_chrom:
+                        continue
+                
+                # We are interested in the single exons of each entry.
+                size_list = exon_size.split(",")
+                stop_list = rel_stop.split(",") #here list of starts.
+                #interest in exons. Thus start inclusive, end exclusive.
+                for i in range(0, int(number_exons)-1):
+                    current_stop=stop+int(stop_list[i]) #next exon stop.
+                    exon_end = current_stop-1 #technically exon stop.
+                    exon_start = current_stop+int(size_list[i])+1 #exon start
+                
+                    if trans_name in transID_exons:
+                        transID_exons[trans_name].append([chrom,exon_start, 
+                                                          exon_end, strand])
+                    else:
+                        transID_exons[trans_name] = [[chrom,exon_start, 
+                                                      exon_end, strand]]
+            """
 
 print("2 done")
+#for key in transID_exons:
+#    print(transID_exons[key])
 
 # %% 3. Make gene/exon dictionary.
 """Every exon that is not the first or last exon in a gene, is treated as 
@@ -164,7 +249,7 @@ for gene_id in gene_dict:
                     else:
                         gene_exons[gene_id].append(exon)
 
-"""
+""" Happens later. No longer needed here.
 # Sort the exons belonging to one gene id, to find first and last.
 for gene_id in gene_exons:
     #sort after start positions of exons. remove first exon.
@@ -173,102 +258,11 @@ for gene_id in gene_exons:
     gene_exons[gene_id]=gene_exons[gene_id][1::]
     #sort after end positions. remove last exon.
     gene_exons[gene_id] = gene_exons[gene_id][0:-1]
-    """
+"""
 print("3 done")
 
+
 # %% 4. Read BAM file
-"""
-exon_reads = []
-
-# Splicejunction has alignment pattern:
-pattern_junction = re.compile(r'\d+M\d+N\d+M')
-
-if args.coordinates:
-    command = ['samtools', 'view', '-h', '-F', '0x100', args.bamfile,
-               args.coordinates]
-else:
-    command = ['samtools', 'view', '-h', '-F', '0x100', args.bamfile]
-
-
-    for line in sam:
-        if line.startswith("@"):
-            continue
-        # if the line follows the pattern containing one or more splice junctions:
-        if bool(re.search(r"(\d+)\t([a-z]{3}\d+)\t(\d+)\t(\d+)\t"
-                          r"(\d+M\d+N\d+M)*\t.+YT:Z:([A-Z]{2})",
-                          line)) == True:
-            entries = re.search(r"(\d+)\t([a-z]{3}\d+)\t(\d+)\t(\d+)\t"
-                                r"(\d+M\d+N\d+M)\t.+YT:Z:([A-Z]{2})", line)
-            # Assign variables to entries in line.
-            flag = entries.group(1)
-            chrom = entries.group(2)
-            start = entries.group(3)
-            cigar = entries.group(5)
-            pair = entries.group(6)
-    
-            # We only include concordant pairs:
-            if pair != "CP":
-                continue
-    
-            #To allow for several junctions in one cigar string, we require a loop that keeps 
-            #looking for a pattern.
-            current_cigar = cigar
-            current_length = 0
-            while bool(re.search(pattern_junction, current_cigar)) == True:
-                print(current_cigar)
-                junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-                exon1 = int(junction.group(1))
-                intron = int(junction.group(2))
-                exon2 = int(junction.group(3))
-                exon1_start = int(start)+current_length-1
-                exon1_end = exon1_start+exon1
-                exon2_start = exon1_end+intron + 1
-                exon2_end = exon2_start+exon2
-    
-               # If junction has less than 3 bp on either side of the intron, 
-               # remove it:
-                if exon1 < 3 or exon2 < 3:
-                    # update cigar string
-                    current_cigar = re.sub(r'^.*?N', 'N',
-                                           current_cigar).lstrip("N")
-                    current_length += exon2_start
-                    continue
-    
-                # if there's input coordinates, exons need to be in the region.
-                if exon1_end < coord_start or exon2_start > coord_stop:
-                    # update cigar string
-                    current_cigar = re.sub(r'^.*?N', 'N',
-                                           current_cigar).lstrip("N")
-                    current_length += exon2_start
-                    continue
-    
-                # Exclude non-primary alignments (flag 256)
-                if len(bin(int(flag))) >= 11 and str(bin(int(flag)))[-9] == "1":
-                    # update cigar string
-                    current_cigar = re.sub(r'^.*?N', 'N',
-                                           current_cigar).lstrip("N")
-                    current_length += exon2_start
-                    continue
-    
-                exon_reads.append([exon1_start, exon1_end],
-                                  [exon2_start, exon2_end])
-    
-                # update cigar string
-                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-                current_length += exon2_start
-
-# count reads per exon.
-total_reads = len(exon_reads)
-
-print("before loop fine.")
-
-for gene in gene_exons:
-    for exons in gene_exons[gene]:
-        #iterate through reads:
-        for reads in exon_reads:
-            if reads[0]>=exons[0] and reads[1]<=exons[1]:
-                exons[2]+=1
-"""
 
 # This command would count all reads per exon, we only want spliced.
 # exons[3]+=pysam.AlignmentFile.count(samfile, contig=exons[0], start=exons[1],
@@ -278,9 +272,6 @@ for gene in gene_exons:
 #                                     start=exons[1], stop=exons[2], 
 #                                     read_callback=check_read(read))
 
-def check_read(read):
-    if re.search(r'\d+M\d+N\d+M', read.split("\t")[4]):
-        return True
 
 "open output file"
 out=open(args.out, "w")
@@ -314,40 +305,75 @@ for read in samfile:
 """
 #pysam gives the line a new structure. unlike samtools. 
 #chromosome entry complete nonsense. way too many different options.
+counter=0
 for gene_id in gene_exons:
+    #keep updates on progress of script. 
+    print("gene id", counter, "out of ", len(gene_exons))
+    counter+=1
+
     #for some genes, there might only be one or two annotated exons. Thus no
     #CE. These we skip to avoid indexing problems.
     if len(gene_exons[gene_id])<3:
         continue
-    #sort after start positions, specify start exon and remove it.
-    gene_exons[gene_id].sort(key=lambda x: x[1])
-    start_first_exon=gene_exons[gene_id][0][1]
-    gene_exons[gene_id]=gene_exons[gene_id][1::]
-    #sort after stop positions, specify stop exon and remove it
-    gene_exons[gene_id].sort(key=lambda x: x[2])
-    stop_last_exon=gene_exons[gene_id][-1][2]
-    gene_exons[gene_id] = gene_exons[gene_id][0:-1]
+    #Extract strand and chromosome of gene.
+    gene_strand=gene_exons[gene_id][0][3]
     chrom=gene_exons[gene_id][0][0]
     
+    """Here on out, refering to smaller and bigger coordinate, as for plus 
+    strand the smaller coordinate is start and the bigger stop, but for minus 
+    strand its the other way around."""
+    #sort after smaller coordinate, specify "first" exon and remove it.
+    gene_exons[gene_id].sort(key=lambda x: x[1])
+    small_first_exon=gene_exons[gene_id][0][1] #smaller coord.
+    gene_exons[gene_id]=gene_exons[gene_id][1::]
+    #sort after bigger positions, specify last exon and remove it
+    gene_exons[gene_id].sort(key=lambda x: x[2])
+    big_last_exon=gene_exons[gene_id][-1][2]
+    gene_exons[gene_id] = gene_exons[gene_id][0:-1]
+
+    """
+    if gene_strand=="+":
+        #sort after start positions, specify start exon and remove it.
+        gene_exons[gene_id].sort(key=lambda x: x[1])
+        start_first_exon=gene_exons[gene_id][0][1]
+        gene_exons[gene_id]=gene_exons[gene_id][1::]
+        #sort after stop positions, specify stop exon and remove it
+        gene_exons[gene_id].sort(key=lambda x: x[2])
+        stop_last_exon=gene_exons[gene_id][-1][2]
+        gene_exons[gene_id] = gene_exons[gene_id][0:-1]
+        fetch_coord=[start_first_exon, stop_last_exon]
+        
+    if gene_strand=="-":
+        #sort after start positions, specify start exon and remove it.
+        gene_exons[gene_id].sort(key=lambda x: x[1])
+        start_first_exon=gene_exons[gene_id][-1][1]
+        gene_exons[gene_id]=gene_exons[gene_id][0:-1]
+        #sort after stop positions, specify stop exon and remove it
+        gene_exons[gene_id].sort(key=lambda x: x[2])
+        stop_last_exon=gene_exons[gene_id][0][2]
+        gene_exons[gene_id] = gene_exons[gene_id][1::]
+        fetch_coord=[stop_last_exon, start_first_exon]
+        #because fetch needs start>stop.
+    """   
     #Title for new gene, so they are clearly seperated in outputfile
-    out.write("# gene id: {} \n".format(gene_id))
-    #iterate through exons of gene
+    out.write("# gene id: {}, strand: {}\n".format(gene_id, gene_strand))
+    #iterate through exons of each gene_ID 
     for exons in gene_exons[gene_id]:
-        #initiate count values:
+        #initiate count values for PSI scores
         junction3=0
         junction5=0
         splice_junction=0
-        #reset read dictionary
+        
+        #reset read dictionary (used to remove mate reads at same junction)
         read_dict=dict()
+        
         #Open bam file at the coordinates of this gene. returns iterable.
-        samfile_fetch=samfile.fetch(chrom, start_first_exon, stop_last_exon)
+        samfile_fetch=samfile.fetch(chrom, small_first_exon, big_last_exon)
         #iterate through reads at gene's location:
         for read in samfile_fetch:
-            #turn into string object.
-            read_str=read.to_string()
+            #only use junction reads!
             if re.search(r'\d+M\d+N\d+M', read.cigarstring):
                 name=read.query_name
-                cigar=read.cigarstring
                 start=int(read.reference_start)
                 chrom=read.reference_name
                 read_length=read.infer_query_length()
@@ -357,11 +383,9 @@ for gene_id in gene_exons:
                 if read.is_secondary:
                     continue
                 #exclude second read of pair, if maps to overlapping region.
-                #works for plus.
                 if name in read_dict:
                     if read_dict[name][0]<=start<=read_dict[name][1] or \
                     read_dict[name][0]<=start+read_length<=read_dict[name][1]:
-                        print("excluded second read!")
                         continue
                 else:
                     read_dict[name]=[start, start+read_length]
@@ -375,57 +399,109 @@ for gene_id in gene_exons:
                     strand="+"
                 elif read.mate_is_forward and read.is_read2:
                     strand="-"
+                    
+                "Filtering pt 2"
+                #Exclude reads on the wrong strand
+                if strand!= exons[3]:
+                    continue
                 
-                #To allow for several junctions in one cigar string, we require a loop that keeps 
-                #looking for a pattern.
-                current_cigar = cigar
-                current_length = 0
+                #To allow for several junctions in one cigar string, 
+                #we require a loop that keeps looking for a pattern.
+                current_cigar = read.cigarstring
+                current_start = int(start)
                 while re.search(r'\d+M\d+N\d+M', current_cigar):
                     #assign splice junction variables
                     junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-                    exon1 = int(junction.group(1))
-                    intron = int(junction.group(2))
-                    exon2 = int(junction.group(3))
-                    exon1_start = int(start)+current_length-1
-                    exon1_end = exon1_start+exon1
-                    exon2_start = exon1_end+intron + 1
-                    exon2_end = exon2_start+exon2
+                    if strand=="+":
+                        exon1 = int(junction.group(1))
+                        intron = int(junction.group(2))
+                        exon2 = int(junction.group(3))
+                        exon1_start = current_start
+                        exon1_end = exon1_start+exon1+1
+                        exon2_start = exon1_end+intron
+                        exon2_end = exon2_start+exon2 +1
+                        smaller_ex=[exon1_start, exon1_end]
+                        bigger_ex=[exon2_start, exon2_end]
                     
-                    "Filtering pt 2"
-                    # If junction has less than 3 bp on either side of the intron, 
-                    # skip it:
+                    if strand =="-":
+                        exon2 = int(junction.group(1))
+                        intron = int(junction.group(2))
+                        exon1 = int(junction.group(3))
+                        exon2_end=current_start-1
+                        exon2_start=exon2_end+exon2
+                        exon1_end=exon2_start+intron
+                        exon1_start=exon1_end+exon1
+                        smaller_ex=[exon2_end, exon2_start]
+                        bigger_ex=[exon1_end, exon1_start]
+                        
+                    
+                    "Filtering pt 3"
+                    # If junction has less than 3 bp on either side of the 
+                    # intron, skip it:
                     if exon1 < 3 or exon2 < 3:
                         # update cigar string
                         current_cigar = re.sub(r'^.*?N', 'N',
                                                current_cigar).lstrip("N")
-                        current_length += exon2_start
+                        current_start= exon2_start
                         continue
                     
-                    "Count: this is for forward string"
-                    #print(exon1_end, exons[1], exon2_start, exons[2])
-                    if exon1_end < exons[1] and exon2_start>exons[2]:
+                    "Counts:"
+                    if smaller_ex[1]<exons[1] and bigger_ex[0]>exons[2]:
                         splice_junction+=1
-                    elif exon1_end<exons[1] and exons[1]<exon2_end<exons[2]:
+                    elif smaller_ex[1]<exons[1] and \
+                        exons[1]<=bigger_ex[1] <= exons[2]:
                         junction5+=1
-                    elif exon2_end>exons[2] and exons[1]<exon1_start<exons[2]:
+                    elif bigger_ex[0]>exons[2] and \
+                        exons[1]<=smaller_ex[0]<=exons[2]:
                         junction3+=1
                     
+                    """
+                    if strand=="+":
+                        "Count: this is for forward strand"
+                        #print(exon1_end, exons[1], exon2_start, exons[2])
+                        if exon1_end < exons[1] and exon2_start>exons[2]:
+                            splice_junction+=1
+                        elif exon1_end<exons[1] and \
+                            exons[1]<exon2_end<exons[2]:
+                            junction5+=1
+                        elif exon2_end>exons[2] and \
+                            exons[1]<exon1_start<exons[2]:
+                            junction3+=1
+                    
+                    if strand=="-":
+                        "Count for reverse strand"
+                        #print(exon1_end, exons[1], "\t", exon2_start, exons[2])
+                        if exon1_end >exons[1] and exon2_start<exons[2]:
+                            #print("Splice junction")
+                            splice_junction+=1
+                        elif exon2_start<exons[2] and \
+                            exons[2]>=exon1_start >=exons[1]:
+                            #print("5' junction")
+                            junction5+=1
+                        elif exon1_end>exons[1] and \
+                            exons[2]>=exon2_end >= exons[1]:
+                            #print("3' junction")
+                            junction3+=1
+                    """
+                    
                     # update cigar string
-                    current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-                    current_length += exon2_start
+                    current_cigar = re.sub(r'^.*?N', 'N', 
+                                           current_cigar).lstrip("N")
+                    current_start= exon2_start
         
         "Calculate PSI for exon, write it into file"
         #those that did not appear in reads, will be 0. They get a NAN value.
-        if (junction5+junction3+splice_junction)==0:
+        if int((junction5+junction3+splice_junction))==0:
             PSI="NAN"
         else:
             PSI=(junction5+junction3)/(junction5+junction3+splice_junction)
-        out.write("{}\t{}\n".format(exons[0]+"_"+str(exons[1])+"_"+str(exons[2]), PSI))
+        out.write("{}\t{}\n".format(exons[0]+"_"+str(exons[1])+"_"+
+                                    str(exons[2]), PSI))
         
 out.close       
         
 
-print("4. done")
+print("4 done")
 
         
         
