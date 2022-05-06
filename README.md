@@ -143,6 +143,6 @@ python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38
 Command line for minus strand:
 
 ```shell
-python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o SYNE1_event_out.txt -c "chr6:152380546-152381564" 
+python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o SYNE1_event_out.txt -c "chr6:152121687-152637362" 
 ```
-
+Update: Coordinates of SYNE1 were wrong, now that they are corrected, it works! Get output file for forward and reverse strand genes. 
