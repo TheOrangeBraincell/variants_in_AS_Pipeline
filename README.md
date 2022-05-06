@@ -136,13 +136,13 @@ Update 2: The events_gencode script now excludes second reads of read pairs mapp
 After managing to obtain reasonable PSI scores for ESR1 on the plus strand, this week was spent on trying to implement the same for genes on the reverse strand. So far not successfully. But in the process of trying to figure out why, the script was reworked. 
 Command line for plus strand:
 
-´´´shell
+```shell
 python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o CE_ESR1.txt -c "chr6:151600000-152150000" 
-´´´
+```
 
 Command line for minus strand:
 
-´´´shell
+```shell
 python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o SYNE1_event_out.txt -c "chr6:152380546-152381564" 
-´´´
+```
 
