@@ -1,28 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-date: 21-04-22
+date: 10-05-22
 title: events_gencode.py
 author: Mirjam Karlsson-Müller
     
 Abbreviations:
-CE= casette exon
-AA= alternative acceptor
-AD= alternative donor
+    CE= casette exon
+    AA= alternative acceptor
+    AD= alternative donor
 
-Finds alternative splicing events in gencode bed file, and calculates the PSI
-for these events, based on the bam files from the SCAN-B database.
-
-Currently only returns event table with potential CE events and their PSI socres.
-
-no AA or AD or intron retention.
-
-python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690496-152103274"
-
-go more generous on the coordinates.
-
-python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690000-15210000"
+Description:
+    Finds potential CE in gencode bed file, and calculates the PSI
+    for these events, based on the bam files from the SCAN-B database.
 
 
+Instructions:
+    Run in command line. Requires database files.
+    The tsv file contains information on what transcription ID's belong to what
+    gene ID and the bed file contains annotated exons per transcription ID.
+    Also requires a folder with alignment files (bam) and corresponding index
+    files (bai) with same name, but different ending.
+    
+    #with coordinates for Estrogen Receptor
+    python events_gencode.py -s . -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o CE_ESR1.txt -c "chr6:151600000-152150000" 
+
+    #no coordinates
+    python events_gencode.py -s . -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o all_event_out.txt  
+
+Possible Bugs:
+    - If there is no .bai file for a .bam file, then the bam file cannot be
+    opened and thus not processed. The same happens if the .bai file has a 
+    different name from the bam file or is in a different folder.
+    
 
 """
 
