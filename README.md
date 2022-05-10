@@ -149,3 +149,6 @@ Update: Coordinates of SYNE1 were wrong, now that they are corrected, it works! 
 
 ## 10.5.22
 events_gencode.py now processes several samples. However, a new problem was discovered, where some of the samples have several alignment files. Will be included in next version.
+  
+update: Completely rewritten part 4, but it can now process a variable amount of samples with a variable amount of bam files. There is also a progress update implemented now. Ready to be run on 100 samples!
+
