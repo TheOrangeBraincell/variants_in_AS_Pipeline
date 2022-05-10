@@ -12,8 +12,9 @@ AD= alternative donor
 Finds alternative splicing events in gencode bed file, and calculates the PSI
 for these events, based on the bam files from the SCAN-B database.
 
-Currently only returns event table with CE events, no AA or AD or intron
-retention.
+Currently only returns event table with potential CE events and their PSI socres.
+
+no AA or AD or intron retention.
 
 python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690496-152103274"
 
@@ -21,10 +22,7 @@ go more generous on the coordinates.
 
 python events_gencode.py -b alignment.bam -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690000-15210000"
 
-but if we go too generous on the coordinates, we might find things on the wrong strand.
-Though this is only based on gencode, and it would tell us if a transcript would 
-belong to a different gene. So for now it isnt a problem.  
-But it might become one when we include novel junctions. keep that in mind.  
+
 
 """
 
@@ -195,42 +193,174 @@ for gene_id in gene_dict:
                 for exon in transID_exons[trans_id]:
                     if transID_exons[trans_id].index(exon) == 0:
                         gene_exons[gene_id] = [exon]
+                    #Avoid duplicate exons. 
+                    if exon in transID_exons[trans_id]:
+                        continue
                     else:
                         gene_exons[gene_id].append(exon)
 
-#print("3 done")
+print("Creating Database Dictionary: Done!")
 
 
-# %% 4. Count reads in BAM file for every CE and calculate PSI.
+# %% 4. Extract reads from bam files.
 
-# This command would count all reads per exon, we only want spliced.
-# exons[3]+=pysam.AlignmentFile.count(samfile, contig=exons[0], start=exons[1],
-#                      stop=exons[2])
+"""Iterating through all BAM files, extracting the splicejunction reads from 
+and saving them by sample of origin. """
+#Find all the bam files in the data folder.
+argument_glob=args.samples+"/**/*.bam"
+bam_file_list=glob.glob(argument_glob, recursive=True)
+
+#If no bam files are found, quit the program.
+if len(bam_file_list)==0:
+    print("""There were no bam files found in the input folder. Please make 
+          sure to use the right input folder. The bam files can be in any 
+          subfolder of the input folder.""")
+    quit()
 
 
+"Initializing variables"
+#Progress tracker
+current_file=0
+total_files=len(bam_file_list)
+percentage=round(100*current_file/total_files,2)
+print("Reading alignment files: ", "{:.2f}".format(percentage), "%", end="\r")
+#to keep track of alignment files
+previous_sample=""
+#Initiate read dictionary
+read_dict=dict()
+#Initiate sample dictionary
+sample_dict=dict()
+#start loop
+for file in bam_file_list:
+    sample_name=file.split("/")[1]
+    #If there is no entry for this sample in the dictionary, initiate new entry
+    if sample_name!=previous_sample:
+        sample_dict[sample_name]=[]
+    #Index file has the same name, but bai ending instead of bam.
+    index_file=file[0:-1]+"i"
+    #open file
+    samfile=pysam.AlignmentFile(file, 'rb', index_filename=index_file)
+    total_reads=samfile.count()
+    #make it iterable.
+    #if coordinates are given, only fetch that part of file
+    if args.coordinates:
+        samfile=samfile.fetch(coord_chrom, coord_start, coord_stop)
+    else:
+        samfile=samfile.fetch()
+    #Progress tracker
+    current_read=0
+    for read in samfile:
+        #print("\nHERE\n")
+        "Filtering the reads:"
+        #if read is not from a splice junction
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        # Exclude non-primary alignments
+        if read.is_secondary:
+            continue
+        #exclude second read of pair, if maps to overlapping region.
+        name=read.query_name
+        start=int(read.reference_start)
+        chrom=read.reference_name
+        read_length=int(read.infer_query_length())
+        if name in read_dict:
+            if read_dict[name][0]<=start<=read_dict[name][1] or \
+            read_dict[name][0]<=start+read_length<=read_dict[name][1]:
+                continue
+        else:
+            read_dict[name]=[start, start+read_length]
+        
+        "Get strand information"
+        if read.mate_is_reverse and read.is_read1:
+            strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            strand="-"
+        
+        "to allow for several splice junctions in one read"
+        current_cigar = read.cigarstring
+        current_start = int(start)
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            if strand=="+":
+                exon1 = int(junction.group(1))
+                intron = int(junction.group(2))
+                exon2 = int(junction.group(3))
+                exon1_start = current_start
+                exon1_end = exon1_start+exon1+1
+                exon2_start = exon1_end+intron
+                exon2_end = exon2_start+exon2 +1
+                smaller_ex=[exon1_start, exon1_end]
+                bigger_ex=[exon2_start, exon2_end]
+                
+            if strand =="-":
+                exon2 = int(junction.group(1))
+                intron = int(junction.group(2))
+                exon1 = int(junction.group(3))
+                exon2_end=current_start-1
+                exon2_start=exon2_end+exon2
+                exon1_end=exon2_start+intron
+                exon1_start=exon1_end+exon1
+                smaller_ex=[exon2_end, exon2_start]
+                bigger_ex=[exon1_end, exon1_start]
+            
+            
+            "Filtering short reads"
+            # If junction has less than 3 bp on either side of the 
+            # intron, skip it:
+            if exon1 > 3 and exon2 > 3:
+                sample_dict[sample_name].append([chrom, smaller_ex, bigger_ex, 
+                                                 strand])
+            
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= bigger_ex[0]
+        
+        #Progress Update
+        current_read+=1
+        percentage_reads=percentage+round(100*current_read/(total_reads*3),2)
+        print("Reading alignment files: ", "{:.2f}".format(percentage_reads), "%", end="\r")
+        
+        
+    previous_sample=sample_name
+    current_file+=1
+    percentage=round(100*current_file/total_files,2)
+    print("Reading alignment files: ", "{:.2f}".format(percentage), "%", end="\r")
+    #Sort entries for each sample
+    sample_dict[sample_name]=sorted(sample_dict[sample_name])
 
+print("Reading alignment files: Done!         \n", end="\r")
+#%% 5. Counting reads for each exon in each gene, for each sample.
 
-"""Run for bam file of each sample"""
-
-table=dict()   
-#Initiate counter to keep track of progress.
-#counter=0
-for gene_id in gene_exons:
-    #prints updates on progress of script. 
-    #print("sample:"+bam_file_list.index(file)+"/"+len(bam_file_list)+" ,gene id", counter, "/", len(gene_exons), end="\r")
-    #counter+=1
+   
+"open output file"
+out=open(args.out, "w")
+title="Location\t"
+for i in range(1,len(bam_file_list)):
+    title+="s"+str(i)+"\t"
     
-    #for some genes, there might only be one or two annotated exons. Thus no
-    #CE. These we skip to avoid indexing problems.
+out.write(title+"\n")
+
+#Progress tracker
+total_iterations= len(gene_exons)*len(sample_dict)*len(list(gene_exons.values()))
+current_iteration=0
+percentage=round(current_iteration/total_iterations,2)
+#print("Counting Reads: ",percentage, "%", end="\r")
+
+for gene_id in gene_exons:
+    """Filtering out genes: If the there is only 2 or less exons annotated for 
+    a gene id, then there is no potential CE. In that case we are not 
+    interested."""
     if len(gene_exons[gene_id])<3:
         continue
-    #Extract strand and chromosome of gene.
-    gene_strand=gene_exons[gene_id][0][3]
-    chrom=gene_exons[gene_id][0][0]
-        
-    """Here on out, refering to smaller and bigger coordinate, as for plus 
-    strand the smaller coordinate is start and the bigger stop, but for minus 
-    strand its the other way around."""
+    #extract strand and chrom from first exon
+    strand=gene_exons[gene_id][0][3]
+    
+    #Remove first and last exon for each gene, as they can not be CE.
     #sort after smaller coordinate, specify "first" exon and remove it.
     gene_exons[gene_id].sort(key=lambda x: x[1])
     small_first_exon=gene_exons[gene_id][0][1] #smaller coord.
@@ -239,160 +369,66 @@ for gene_id in gene_exons:
     gene_exons[gene_id].sort(key=lambda x: x[2])
     big_last_exon=gene_exons[gene_id][-1][2]
     gene_exons[gene_id] = gene_exons[gene_id][0:-1]
-      
-    #iterate through exons of each gene_ID 
-    for exons in gene_exons[gene_id]:
-        #initiate count values for PSI scores
-        junction3=0
-        junction5=0
-        splice_junction=0
+    
+    #remove duplicate exons.
+    gene_exons[gene_id]=list(set(map(tuple,gene_exons[gene_id])))
+    
+    #Line for gene id, so that entries in table are seperated.
+    out.write("#"+gene_id+", "+strand+"\n")
+    for exon in gene_exons[gene_id]:
+        PSI_scores=[]
+        chrom=exon[0]
+        start=exon[1] #Note that these are start and stop coor
+        stop=exon[2] #not start and stop of exon. Strand dependent.
+        strand=exon[3]
+                
+        for sample in sample_dict:
+            current_iteration+=1
+            percentage=round(current_iteration/total_iterations,2)
+            #print("Counting Reads: ",percentage, "%", end="\r")
+            #initiate count values for PSI scores
+            junction3=0
+            junction5=0
+            splice_junction=0
             
-        #reset read dictionary (used to remove mate reads at same junction)
-        read_dict=dict()
-        
-        #Find all the bam files in the data folder.
-        argument_glob=args.samples+"/**/*.bam"
-        bam_file_list=glob.glob(argument_glob, recursive=True)
-        #Iterate through all the alignment files.
-        previous_sample_name=""
-        for file in bam_file_list:
-            print(file)
-            samfile=pysam.AlignmentFile(file, 'rb', index_filename=file[0:-1]+"i")
-            sample_name=file.split("/")[1]
-            #Open bam file at the coordinates of this gene. returns iterable.
-            samfile_fetch=samfile.fetch(chrom, small_first_exon, big_last_exon)
-            #iterate through reads at gene's location:
-            for read in samfile_fetch:
-                #only use junction reads!
-                if re.search(r'\d+M\d+N\d+M', read.cigarstring):
-                    name=read.query_name
-                    start=int(read.reference_start)
-                    chrom=read.reference_name
-                    read_length=read.infer_query_length()
-                    
-                    "Filtering pt 1"
-                    # Exclude non-primary alignments
-                    if read.is_secondary:
-                        continue
-                    #exclude second read of pair, if maps to overlapping region.
-                    if name in read_dict:
-                        if read_dict[name][0]<=start<=read_dict[name][1] or \
-                        read_dict[name][0]<=start+read_length<=read_dict[name][1]:
-                            continue
-                    else:
-                        read_dict[name]=[start, start+read_length]
-                    
-                    "get strand information"
-                    if read.mate_is_reverse and read.is_read1:
-                        strand="-"
-                    elif read.mate_is_reverse and read.is_read2:
-                        strand="+"
-                    elif read.mate_is_forward and read.is_read1:
-                        strand="+"
-                    elif read.mate_is_forward and read.is_read2:
-                        strand="-"
-                        
-                    "Filtering pt 2"
-                    #Exclude reads on the wrong strand
-                    if strand!= exons[3]:
-                        continue
-                    
-                    #To allow for several junctions in one cigar string, 
-                    #we require a loop that keeps looking for a pattern.
-                    current_cigar = read.cigarstring
-                    current_start = int(start)
-                    while re.search(r'\d+M\d+N\d+M', current_cigar):
-                        #assign splice junction variables
-                        junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-                        if strand=="+":
-                            exon1 = int(junction.group(1))
-                            intron = int(junction.group(2))
-                            exon2 = int(junction.group(3))
-                            exon1_start = current_start
-                            exon1_end = exon1_start+exon1+1
-                            exon2_start = exon1_end+intron
-                            exon2_end = exon2_start+exon2 +1
-                            smaller_ex=[exon1_start, exon1_end]
-                            bigger_ex=[exon2_start, exon2_end]
-                        
-                        if strand =="-":
-                            exon2 = int(junction.group(1))
-                            intron = int(junction.group(2))
-                            exon1 = int(junction.group(3))
-                            exon2_end=current_start-1
-                            exon2_start=exon2_end+exon2
-                            exon1_end=exon2_start+intron
-                            exon1_start=exon1_end+exon1
-                            smaller_ex=[exon2_end, exon2_start]
-                            bigger_ex=[exon1_end, exon1_start]
-                            
-                        
-                        "Filtering pt 3"
-                        # If junction has less than 3 bp on either side of the 
-                        # intron, skip it:
-                        if exon1 < 3 or exon2 < 3:
-                            # update cigar string
-                            current_cigar = re.sub(r'^.*?N', 'N',
-                                                   current_cigar).lstrip("N")
-                            current_start= exon2_start
-                            continue
-                        
-                        "Counts:"
-                        if smaller_ex[1]<exons[1] and bigger_ex[0]>exons[2]:
-                            splice_junction+=1
-                        elif smaller_ex[1]<exons[1] and \
-                            exons[1]<=bigger_ex[1] <= exons[2]:
-                            junction5+=1
-                        elif bigger_ex[0]>exons[2] and \
-                            exons[1]<=smaller_ex[0]<=exons[2]:
-                            junction3+=1
-                        
-                        # update cigar string
-                        current_cigar = re.sub(r'^.*?N', 'N', 
-                                               current_cigar).lstrip("N")
-                        current_start= exon2_start
+            for read in sample_dict[sample]:
+                smaller_exon=read[1]
+                bigger_exon=read[2]
+                
+                #Exclude read if it is on the wrong strand.
+                if read[3]!=strand:
+                    continue
+                
+                "Counts:"
+                if smaller_exon[1]<start and bigger_exon[0]>stop:
+                    splice_junction+=1
+                elif smaller_exon[1]<start and \
+                    start<=bigger_exon[1] <= stop:
+                    junction5+=1
+                elif bigger_exon[0]>stop and \
+                    start<=smaller_exon[0]<=stop:
+                    junction3+=1
+            
             
             "Calculate PSI for exon, write it into file"
             #those that did not appear in reads, will be 0. They get a NAN value.
             #Also filter out low counts, as they are not significant %.
-            if int((junction5+junction3+splice_junction))<=10:
+            if int((junction5+junction3+splice_junction))>=10:
                 PSI="NAN"
             else:
-                PSI=(junction5+junction3)/(junction5+junction3+splice_junction) 
-            
-            if bam_file_list.index(file)==0:
-                table[gene_id]={exons[0]+"_"+str(exons[1])+"_"+str(exons[2]):[PSI]}
-            else:
-                table[gene_id][exons[0]+"_"+str(exons[1])+"_"+str(exons[2])].append(PSI)
+                PSI=round((junction5+junction3)/(junction5+junction3+splice_junction),3) 
+               
+            PSI_scores.append(str(PSI))    
+               
+        out.write("{}\t{}\n".format(exon[0]+"_"+str(exon[1])+"_"+str(exon[2]), 
+                             "\t".join(PSI_scores)))
 
 
-#%% 5. Write into output file.
-            
-"open output file"
-out=open(args.out, "w")
-title="Location\t"
-for i in range(1,len(bam_file_list)):
-    title+="s"+str(i)+"\t"
-out.write(title+"\n")
+out.close
 
-for gene_id in table:
-    #Title for new gene, so they are clearly seperated in outputfile
-    out.write("# gene id: {}, strand: {}\n".format(gene_id, gene_strand))
-    for position in table[gene_id]:
-        out.write("{}\t{}\n".format(position, "\t".join(table[gene_id][position])))        
-out.close       
-        
+print("Counting Reads: Done!         \n", end="\r")
 
-print("\nDone!")
 
-        
-        
-        
-        
-        
-        
-        
-        
         
         
         
