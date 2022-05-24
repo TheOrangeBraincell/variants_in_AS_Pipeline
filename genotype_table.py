@@ -5,14 +5,18 @@ title: genotype_table.py
 author: Mirjam Karlsson-Müller
 
 Description:
-    Takes a genotype table from VCF_parser.py and fills the gap using gene
-    expression data from each samples corresponding gene.tsv file.
+    Takes a genotype table from VCF_parser.py and fills the NAN gaps, depending
+    on whether a variant is within a gene or not. 
+    This is enough crude filtering, as later on, we test the relation between
+    variants in exons and their PSI score, which will only be a number if there
+    has been more than 10 reads found of that exon. Hence we will only look
+    at variants who are in exons which are expressed.
 
 
 Instructions:
     Run in command line.
 
-    python genotype_table.py -s . -o genotype_out.txt -t vcf_parser_all.txt
+    python genotype_table.py -s . -o genotype_out.txt -t vcf_parser_ESR1.txt
 
 Possible Bugs:
     -
@@ -74,7 +78,7 @@ def is_in_gene(sample, location):
     if is_expressed==False:
         return "NE"
     if is_expressed==True:
-        return "HMZ"
+        return "HMZR"
     
 #%% 1. Read in TSV gene file for each sample.    
 
@@ -118,24 +122,25 @@ print("Replacing NAN values: {:.2f}%".format(percentage),end="\r")
 
 #read in current genotype table, write new one simultaneously.
 with open(args.table, "r") as table, open(args.out, "w") as out:
-    out.write("# NE=Not Expressed\n# HMZ= Homozygote\n")
+    out.write("# NE=Not Expressed\n# HMZR=Homozygote Reference, HETZ=Heterozygote, HMZA=Homozygote Alternative\n")
     for line in table:
         if line.startswith("#"):
-            sample_names=line.strip().split("\t")[2:]
+            sample_names=line.strip().split("\t")[1:]
             out.write(line)
             continue
         location=line.split("\t")[0]
-        reference=line.split("\t")[1]
-        genotypes=line.strip().split("\t")[2:]
+        genotypes=line.strip().split("\t")[1:]
         
         for value in genotypes:
             if value=="NAN":
                 new_value=is_in_gene(sample_names[genotypes.index(value)],location)
-            else:
-                new_value=value
+            elif value=="0/1":
+                new_value="HETZ"
+            elif value=="1/1":
+                new_value="HMZA"
             genotypes[genotypes.index(value)]=new_value
             
-        out.write(location+"\t"+reference+"\t"+"\t".join(genotypes)+"\n")
+        out.write(location+"\t"+"\t".join(genotypes)+"\n")
         current_line+=1
         percentage=100*current_line/total_lines
         print("Replacing NAN values: {:.2f}%".format(percentage),end="\r")

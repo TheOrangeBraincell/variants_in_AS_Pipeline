@@ -103,6 +103,7 @@ for file in vcf_file_list:
         if line.startswith("#"):
             continue
         chrom, position, ID, ref, alt, qual, filt, info, form, sample =line.split("\t")
+        genotype=sample.split(":")[-7].strip(" ")
         
         #print(info)
         "Filter entries based on info string"
@@ -164,7 +165,7 @@ for file in vcf_file_list:
         coord=chrom+"_"+position
         sample_name=re.search(r"SAMPLE=(S\d+)\.", info).group(1)
         sample_names.append(sample_name)
-        sample_vcf[coord]={sample_name:[ref, alt]}
+        sample_vcf[coord]={sample_name:genotype}
         
     current_number_files+=1
     percentage=100*(current_number_files/total_files)
@@ -222,7 +223,7 @@ percentage=100*current_genotype/total_genotypes
 print("Writing Output table: {:.2f}%".format(percentage),end="\r")
 
 with open(args.out, "w") as out:
-    title="#Location\tReference_Base\t"+"\t".join(sample_names)
+    title="#Location\t"+"\t".join(sample_names)
     out.write(title+"\n")
     for position in ordered_genotype_dict:
         #make sample list, insert spaceholders
@@ -232,14 +233,13 @@ with open(args.out, "w") as out:
             variant_found=False
             for key, value in ordered_genotype_dict[position].items():
                 if key==sample:
-                    entry+="\t"+value[1]
+                    entry+="\t"+value
                     variant_found=True
-                    reference=value[0]
             if variant_found==False:
                 entry+="\tNAN"
 
         
-        out.write("{}\t{}{}\n".format(position,reference, entry ))
+        out.write("{}{}\n".format(position, entry ))
         current_genotype+=1
         percentage=100*current_genotype/total_genotypes
         print("Writing Output table: {:.2f}%".format(percentage),end="\r")

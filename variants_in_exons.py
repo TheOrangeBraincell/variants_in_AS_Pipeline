@@ -77,8 +77,8 @@ exon the variant is in """
 with open(args.genotype, "r") as genotype, open(args.out, "w") as out:
     for line in genotype:
         if line.startswith("#Location"): 
-            sample_names=line.split("\t")[2:]
-            out.write(line.split("\t")[0]+"\t"+"exon"+"\t"+"\t".join(line.split("\t")[2:]))
+            sample_names=line.split("\t")[1:]
+            out.write(line.split("\t")[0]+"\t"+"exon"+"\t"+"\t".join(line.split("\t")[1:]))
             continue
         elif line.startswith("#"):
             out.write(line)
@@ -86,7 +86,7 @@ with open(args.genotype, "r") as genotype, open(args.out, "w") as out:
         
         location=line.split("\t")[0]
         reference=line.split("\t")[1]
-        genotypes=line.strip().split("\t")[2:]
+        genotypes=line.strip().split("\t")[1:]
         
         #replace HMZ with reference genotype
         for item in genotypes:
