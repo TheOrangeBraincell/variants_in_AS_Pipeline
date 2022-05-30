@@ -119,6 +119,9 @@ python variants_in_exons.py -g genotype_out.txt -p CE_ESR1_all.txt -o genotypes_
 ```
 The output is a genotype table, containing information on what position, and in which exon a variant is laying. As well as which genotype all samples have at this position.
 
+## Statistical testing on output tables for ESR1
+A set of one-way ANOVA's were conducted on the tables, so that for each exon-location pair, it was tested whether there was a significant difference between genotypes. The p-values of these tests where then corrected for multiple testing. The script used for this was statistics_ESR1.R. Note that to run this script yourself, the working directory and the table names have to be changed in the script. Both the results and the script can be found in the Statistical_Testing subfolder.
+
 ## Further steps
 Using the PSI table and the final genotype table, one can analyze the potential correlation between the expression of an exon and the genetic variants found in it.
 
