@@ -10,7 +10,8 @@
 4.   Fill gaps to create a complete genotype table.
 5.   Identify the variants laying within the coordinates of potential Casette Exons.
 
-The scripts for these steps have been written in Python v3.8.13.
+The scripts for these steps, as well as the script detecting novel splice sites, have been written in Python v3.8.13.
+Statistical testing has been conducted on an example gene using R v4.1.1. 
 
 ### Requirements
 
