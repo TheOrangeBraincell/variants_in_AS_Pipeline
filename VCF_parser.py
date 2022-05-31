@@ -223,7 +223,7 @@ percentage=100*current_genotype/total_genotypes
 print("Writing Output table: {:.2f}%".format(percentage),end="\r")
 
 with open(args.out, "w") as out:
-    title="#Location\t"+"\t".join(sample_names)
+    title="Location\t"+"\t".join(sample_names)
     out.write(title+"\n")
     for position in ordered_genotype_dict:
         #make sample list, insert spaceholders

@@ -5,8 +5,10 @@ title: variants_in_exons.py
 author: Mirjam Karlsson-Müller
 
 Description:
-    Takes a genotype table from VCF_parser.py and fills the gap using gene
-    expression data from each samples corresponding gene.tsv file.
+    Filters the genotype table created by genotype_table.py, so that it only 
+    contains variants which lay within a potential CE. The corresponding 
+    exon information is added to the table to make statistical testing
+    easier.
 
 
 Instructions:
@@ -76,7 +78,7 @@ exon the variant is in """
 
 with open(args.genotype, "r") as genotype, open(args.out, "w") as out:
     for line in genotype:
-        if line.startswith("#Location"): 
+        if line.startswith("Location"): 
             sample_names=line.split("\t")[1:]
             out.write(line.split("\t")[0]+"\t"+"exon"+"\t"+"\t".join(line.split("\t")[1:]))
             continue

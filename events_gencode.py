@@ -25,7 +25,7 @@ Instructions:
     python events_gencode.py -s . -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o CE_ESR1.txt -c "chr6:151600000-152150000" 
 
     #no coordinates
-    python events_gencode.py -s . -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o all_event_out.txt  
+    python events_gencode.py -s . -gc geneID_hg38_GENCODE39.tsv -db hg38_GENCODE39.bed -o CE_PSI_all_out.txt  
 
 Possible Bugs:
     - If there is no .bai file for a .bam file, then the bam file cannot be
@@ -40,18 +40,24 @@ import argparse
 import re
 import pysam
 import glob
+import time
+
+#%% Time
+
+start_time=time.time()
 
 # %% 0. argparse
 
-"1. Setting up argparse, handling input parameters"
+"0. Setting up argparse, handling input parameters"
 
-parser = argparse.ArgumentParser(prog='Find Events',
-                                 usage='%(prog)s -b BAM-INPUT -o OUTPUT ',
-                                 description="""Returns alternative potential
+parser = argparse.ArgumentParser(prog='Find GENECODE events',
+                                 usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
+                                     [-c] "chrX:XXXXXX-XXXXXX" -db BEDFILE \
+                                         -gc GENCODE_TSV',
+                                 description="""Returns potential
                                  Casette Exons and their PSI scores, 
                                  based on sample bam files.""")
 
-# Bam file should be later replaced with bam folder. (to allow several samples)
 parser.add_argument('--samples', '-s', required=True,
                     help='folder containing sample folders containing among \
                         others, the bam files.')
@@ -61,8 +67,8 @@ parser.add_argument('--database', '-db', required=True,
                     help="""BED file containing already known/annotated splice
                     junctions from the ucsc.""")
 parser.add_argument('--out', '-o', required=True,
-                    help="""Output bed file, where comparison data should be 
-                    printed to.""")
+                    help="""Output txt file, where PSI scores are printed to.
+                    """)
 parser.add_argument('--coordinates', '-c', type=str,
                     help="""Start and stop coordinates of region of interest,
                     as well as chromosome. Format: chr[]:start-stop""")
@@ -112,14 +118,8 @@ with open(args.gencode, "r") as gene:
                 else:
                     gene_dict[gene_id] = [transcript_id]
 
-#print("1 done")
-#print(gene_dict)
-#here we still have all trans_ids per chromosome.
-
-
 
 # %% 2. Extract exons from gencode bed file
-"""  """
 transID_exons = dict()
 
 with open(args.database, "r") as database:
@@ -210,7 +210,6 @@ for gene_id in gene_dict:
 
 print("Creating Database Dictionary: Done!")
 
-
 # %% 4. Extract reads from bam files.
 
 """Iterating through all BAM files, extracting the splicejunction reads from 
@@ -227,6 +226,7 @@ if len(bam_file_list)==0:
     quit()
 
 
+
 "Initializing variables"
 #Progress tracker
 current_file=0
@@ -235,6 +235,7 @@ percentage=round(100*current_file/total_files,2)
 print("Reading alignment files: ", "{:.2f}".format(percentage), "%", end="\r")
 #to keep track of alignment files
 previous_sample=""
+sample_names=[]
 #Initiate read dictionary
 read_dict=dict()
 #Initiate sample dictionary
@@ -334,7 +335,7 @@ for file in bam_file_list:
         percentage_reads=percentage+round(100*current_read/(total_reads*3),2)
         print("Reading alignment files: ", "{:.2f}".format(percentage_reads), "%", end="\r")
         
-        
+    sample_names.append(sample_name)
     previous_sample=sample_name
     current_file+=1
     percentage=round(100*current_file/total_files,2)
@@ -343,14 +344,16 @@ for file in bam_file_list:
     sample_dict[sample_name]=sorted(sample_dict[sample_name])
 
 print("Reading alignment files: Done!         \n", end="\r")
+
+#Ordering so the data is in the sample order
+sample_names=sorted(list(set(sample_names)))
 #%% 5. Counting reads for each exon in each gene, for each sample.
 
    
 "open output file"
 out=open(args.out, "w")
-title="Location\t"
-for i in range(1,len(bam_file_list)):
-    title+="s"+str(i)+"\t"
+title="Location\t"+"\t".join(sample_names)
+
     
 out.write(title+"\n")
 
@@ -370,17 +373,22 @@ for gene_id in gene_exons:
     strand=gene_exons[gene_id][0][3]
     
     #Remove first and last exon for each gene, as they can not be CE.
+    print(gene_exons[gene_id])
     #sort after smaller coordinate, specify "first" exon and remove it.
     gene_exons[gene_id].sort(key=lambda x: x[1])
+    print(gene_exons[gene_id])
     small_first_exon=gene_exons[gene_id][0][1] #smaller coord.
     gene_exons[gene_id]=gene_exons[gene_id][1::]
+    print(gene_exons[gene_id])
     #sort after bigger positions, specify last exon and remove it
     gene_exons[gene_id].sort(key=lambda x: x[2])
+    #print(gene_exons[gene_id])
     big_last_exon=gene_exons[gene_id][-1][2]
     gene_exons[gene_id] = gene_exons[gene_id][0:-1]
     
     #remove duplicate exons.
-    gene_exons[gene_id]=list(set(map(tuple,gene_exons[gene_id])))
+    gene_exons[gene_id]=sorted(list(set(map(tuple,gene_exons[gene_id]))))
+    #print(gene_exons[gene_id])
     
     #Line for gene id, so that entries in table are seperated.
     out.write("#"+gene_id+", "+strand+"\n")
@@ -391,7 +399,7 @@ for gene_id in gene_exons:
         stop=exon[2] #not start and stop of exon. Strand dependent.
         strand=exon[3]
                 
-        for sample in sample_dict:
+        for sample in sample_names:
             current_iteration+=1
             percentage=round(current_iteration/total_iterations,2)
             #print("Counting Reads: ",percentage, "%", end="\r")
@@ -422,13 +430,13 @@ for gene_id in gene_exons:
             "Calculate PSI for exon, write it into file"
             #those that did not appear in reads, will be 0. They get a NAN value.
             #Also filter out low counts, as they are not significant %.
-            if int((junction5+junction3+splice_junction))>=10:
+            if int((junction5+junction3+splice_junction))<=10:
                 PSI="NAN"
             else:
                 PSI=round((junction5+junction3)/(junction5+junction3+splice_junction),3) 
                
             PSI_scores.append(str(PSI))    
-               
+            #print(PSI, sample)   
         out.write("{}\t{}\n".format(exon[0]+"_"+str(exon[1])+"_"+str(exon[2]), 
                              "\t".join(PSI_scores)))
 
@@ -438,6 +446,9 @@ out.close
 print("Counting Reads: Done!         \n", end="\r")
 
 
+#%% End time
+
+print("Run time: {:.2f} seconds.".format(time.time()-start_time))
         
         
         

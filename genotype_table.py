@@ -124,7 +124,7 @@ print("Replacing NAN values: {:.2f}%".format(percentage),end="\r")
 with open(args.table, "r") as table, open(args.out, "w") as out:
     out.write("# NE=Not Expressed\n# HMZR=Homozygote Reference, HETZ=Heterozygote, HMZA=Homozygote Alternative\n")
     for line in table:
-        if line.startswith("#"):
+        if line.startswith("Location"):
             sample_names=line.strip().split("\t")[1:]
             out.write(line)
             continue
