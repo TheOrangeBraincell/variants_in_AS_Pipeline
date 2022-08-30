@@ -180,12 +180,29 @@ with open(args.database, "r") as database:
                     transID_exons[trans_name] = [[chrom, exon_cor[0], 
                                                   exon_cor[1], strand]]
 
+
+
+#Remove first and last exon for each transcript ID, as they can not be CE.
+
+filtered = {k: v for k, v in transID_exons.items() if len(v) > 2}
+transID_exons=filtered
+
+for trans_name in transID_exons:
+    #sort after smaller coordinate, specify "first" exon and remove it.
+    transID_exons[trans_name].sort(key=lambda x: x[1])
+    small_first_exon=transID_exons[trans_name][0][1] #smaller coord.
+    transID_exons[trans_name]=transID_exons[trans_name][1::]
+    #sort after bigger positions, specify last exon and remove it
+    transID_exons[trans_name].sort(key=lambda x: x[2])
+    big_last_exon=transID_exons[trans_name][-1][2]
+    transID_exons[trans_name] = transID_exons[trans_name][0:-1]
+
 #print("2 done")
 #for key in transID_exons:
 #    print(transID_exons[key])
 
 # %% 3. Make gene/exon dictionary.
-"""Every exon that is not the first or last exon in a gene, is treated as 
+"""Every exon that is left in the transID dictionary is treated as 
 a potential CE"""
 
 gene_exons = dict()
@@ -242,7 +259,7 @@ read_dict=dict()
 sample_dict=dict()
 #start loop
 for file in bam_file_list:
-    sample_name=file.split("/")[1]
+    sample_name=file.split("/")[2]
     #If there is no entry for this sample in the dictionary, initiate new entry
     if sample_name!=previous_sample:
         sample_dict[sample_name]=[]
@@ -364,27 +381,8 @@ percentage=round(current_iteration/total_iterations,2)
 #print("Counting Reads: ",percentage, "%", end="\r")
 
 for gene_id in gene_exons:
-    """Filtering out genes: If the there is only 2 or less exons annotated for 
-    a gene id, then there is no potential CE. In that case we are not 
-    interested."""
-    if len(gene_exons[gene_id])<3:
-        continue
     #extract strand and chrom from first exon
     strand=gene_exons[gene_id][0][3]
-    
-    #Remove first and last exon for each gene, as they can not be CE.
-    print(gene_exons[gene_id])
-    #sort after smaller coordinate, specify "first" exon and remove it.
-    gene_exons[gene_id].sort(key=lambda x: x[1])
-    print(gene_exons[gene_id])
-    small_first_exon=gene_exons[gene_id][0][1] #smaller coord.
-    gene_exons[gene_id]=gene_exons[gene_id][1::]
-    print(gene_exons[gene_id])
-    #sort after bigger positions, specify last exon and remove it
-    gene_exons[gene_id].sort(key=lambda x: x[2])
-    #print(gene_exons[gene_id])
-    big_last_exon=gene_exons[gene_id][-1][2]
-    gene_exons[gene_id] = gene_exons[gene_id][0:-1]
     
     #remove duplicate exons.
     gene_exons[gene_id]=sorted(list(set(map(tuple,gene_exons[gene_id]))))
