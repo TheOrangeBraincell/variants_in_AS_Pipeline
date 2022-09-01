@@ -5,10 +5,10 @@ Created on Tue Aug 30 08:15:01 2022
 @author: mirjam
 
 #With coordinates
-python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1.tsv -c "chr6:151600000-152150000" -as CE 
+python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1_cor.tsv -c "chr6:151650000-152110000" -as CE 
 
 #with gene symbol
- python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1.tsv -n ESR1 -as CE
+ python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1_sym.tsv -n ESR1 -as CE
 
 
 """
@@ -28,7 +28,7 @@ start_time=time.time()
 
 parser = argparse.ArgumentParser(prog='Find Alternative Splicing events',
                                  usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
-                                     -g GENCODE-TSV -n REFSEQ-TSV \
+                                     -g GENCODE-TSV -r REFSEQ-TSV \
                                      [-c] "chrX:XXXXXX-XXXXXX" \
                                          [-n] "ABCDE" ', 
                                  description="""Returns potential
@@ -53,7 +53,7 @@ parser.add_argument('--coordinates', '-c', type=str,
 parser.add_argument('--name', '-n', type=str,
                     help="""Symbol of gene of interest. f.e. ESR1. 
                     (Symbol by HUGO Gene Nomenclature Committee).""")
-parser.add_argument('--AS', '-as', type=str,
+parser.add_argument('--AS', '-as', type=str, required=True,
                     help="""Which type of alternative splicing event we are
                     interested in. "CE" for Casette Exons, "AA" for alternative
                     acceptors, "AD" for alternative donors, "IR" for intron
@@ -174,6 +174,8 @@ for event in inputs:
             #if a transcript only has <=2 exons, there can be no CE.
             filtered_gene_dict={k : v for k , v in gene_dict[gene].items() 
                                 if len(v) >2}
+            gene_dict=filtered_gene_dict
+            print(gene_dict.keys())
             for trans_ID in gene_dict[gene]:
                 #remove "first" exon, smallest start coordinate.
                 gene_dict[gene][trans_ID].sort(key=lambda x: x[1])
