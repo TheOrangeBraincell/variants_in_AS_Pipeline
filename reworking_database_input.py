@@ -5,7 +5,7 @@ Created on Tue Aug 30 08:15:01 2022
 @author: mirjam
 
 #With coordinates
-python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1_cor.tsv -c "chr6:151650000-152110000" -as CE 
+python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1_cor.tsv -c "chr6:151650000-152130000" -as CE 
 
 #with gene symbol
  python reworking_database_input.py -s ../Sample_Data/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -o CE_ESR1_sym.tsv -n ESR1 -as CE
@@ -161,29 +161,45 @@ for file in [args.gencode, args.refseq]:
 
 print("Creating Database Dictionary: Done!")
 
+
 #%% 2. Alternative Splicing events pt 1
+
+"""If the input given is a gene symbol, we need to know its coordinates to 
+check the right reads in the alignment files. Regardless of type of AS."""
+if args.name:
+    #we need to find the coordinates for the bam file.
+    starts=[]
+    stops=[]
+    for trans_ID in gene_dict[args.name]:
+        #sort by starting coordinate.
+        gene_dict[args.name][trans_ID].sort(key=lambda x: x[1])
+        #append starts to find smallest coordinate.
+        starts.append(int(gene_dict[args.name][trans_ID][0][1]))
+        chrom_gene=gene_dict[args.name][trans_ID][0][0]
+        #sort by end coordinate
+        gene_dict[args.name][trans_ID].sort(key=lambda x: x[2])
+        #append stops of last exons to find biggest coordinate.
+        stops.append(int(gene_dict[args.name][trans_ID][-1][2]))
+        
+        
 
 for event in inputs:
     
     "2a.) Casette Exons, Preparation"
     
     if event.upper()=="CE":
-        
         #Remove first and last exon for each transcript, as they cannot be CE
         for gene in gene_dict:
-            #if a transcript only has <=2 exons, there can be no CE.
             filtered_gene_dict={k : v for k , v in gene_dict[gene].items() 
                                 if len(v) >2}
-            gene_dict=filtered_gene_dict
-            print(gene_dict.keys())
+            gene_dict[gene]=filtered_gene_dict
+            #print(gene_dict.keys())
             for trans_ID in gene_dict[gene]:
                 #remove "first" exon, smallest start coordinate.
                 gene_dict[gene][trans_ID].sort(key=lambda x: x[1])
-                first_exon=gene_dict[gene][trans_ID][0]
                 gene_dict[gene][trans_ID][1::]
                 #remove "last" exon, biggest end coordinate.
                 gene_dict[gene][trans_ID].sort(key=lambda x: x[2])
-                last_exon=gene_dict[gene][trans_ID][-1]
                 gene_dict[gene][trans_ID][0:-1]
                 
         
@@ -195,18 +211,20 @@ for event in inputs:
         exons_db=dict()
         
         for gene in gene_dict:
-            gene_exons[gene]=[]
-            for trans_ID in gene_dict[gene]:
-                for exon in gene_dict[gene][trans_ID]:
-                    if exon[0:-1] not in gene_exons[gene]:
-                        gene_exons[gene].append(exon[0:-1])
-                    if "_".join(exon[0:-1]) in exons_db:
-                        if exon[-1] in exons_db["_".join(exon[0:-1])]:
-                            continue
+            if gene_dict[gene]:
+                gene_exons[gene]=[]
+                for trans_ID in gene_dict[gene]:
+                    for exon in gene_dict[gene][trans_ID]:
+                        if exon[0:-1] not in gene_exons[gene]:
+                            gene_exons[gene].append(exon[0:-1])
+                        if "_".join(exon[0:-1]) in exons_db:
+                            if exon[-1] in exons_db["_".join(exon[0:-1])]:
+                                continue
+                            else:
+                                exons_db["_".join(exon[0:-1])]+=exon[-1]
                         else:
-                            exons_db["_".join(exon[0:-1])]+=exon[-1]
-                    else:
-                        exons_db["_".join(exon[0:-1])]=exon[-1]
+                            exons_db["_".join(exon[0:-1])]=exon[-1]
+
 
 """This is currently set up in a way that multiple AS inputs would just 
 overwrite the dictionaries given by previous AS input. However, since atm
@@ -267,7 +285,8 @@ for file in bam_file_list:
     if args.coordinates:
         samfile=samfile.fetch(coord_chrom, coord_start, coord_stop)
     elif args.name:
-        samfile=samfile.fetch(first_exon[0], int(first_exon[1]), int(last_exon[2]))
+        #coordinates defined lines 172-194 
+        samfile=samfile.fetch(chrom_gene, min(starts), max(stops))
     else:
         samfile=samfile.fetch()
     
@@ -377,7 +396,7 @@ for event in inputs:
     if event.upper()=="CE":
         "open output file"
         out=open(args.out, "w")
-        title="Location\t"+"\t".join(sample_names)
+        title="Location\tDatabase\t"+"\t".join(sample_names)
 
             
         out.write(title+"\n")
@@ -442,18 +461,13 @@ for event in inputs:
                         PSI=round((junction5+junction3)/(junction5+junction3+splice_junction),3) 
                        
                     PSI_scores.append(str(PSI))    
-                    #print(PSI, sample)   
-                out.write("{}\t{}\n".format(exon[0]+"_"+str(exon[1])+"_"+str(exon[2]), 
+                    #print(PSI, sample)
+                loc=exon[0]+"_"+str(exon[1])+"_"+str(exon[2])
+                out.write("{}\t{}\t{}\n".format(loc,exons_db[loc+"_"+strand], 
                                      "\t".join(PSI_scores)))
 
 
         out.close
-                     
-                        
-
-        
-
-
 
 print("Counting Reads: Done!         \n", end="\r")
 
