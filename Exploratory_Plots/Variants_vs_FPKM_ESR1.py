@@ -4,7 +4,7 @@ Exploring Genotype Prediction/Gene Expression Coherence.
 
 #Variants vs FPKM  for one gene!
 
-python Variants_vs_FPKM_ESR1.py -s ../Sample_Data/ -c "chr6:151650000-152130000"
+python Variants_vs_FPKM_ESR1.py -s ../Sample_Data/ -c "chr6:151690496-152129619"
 """
 #%% Imports
 
@@ -12,8 +12,7 @@ import argparse
 import glob
 import re
 import gzip
-import matplotlib.pylab as plt
-import math
+
 
 #%% Argparse
 "0. Setting up argparse, handling input parameters"
@@ -183,7 +182,13 @@ for file in vcf_file_list:
 
 print("Filtering vcf: Done!            \n",end="\r")
 
+with open("ESR1_out.txt", "w") as out:
+    out.write("Sample\tCount\tFPKM\n")
+    for sample in variant_counts:
+        out.write("{}\t{}\t{}\n".format(sample, variant_counts[sample], fpkm[sample]))
 
+
+""" Only plot in R.
 x=[]
 y=[]
 coordinates=[]
@@ -200,4 +205,4 @@ plt.xlabel("FPKM")
 plt.ylabel("Variant Counts")
 plt.title("Variant Counts/FPKM for ESR1")
 plt.savefig("Variants_vs_FPKM_ESR1.png")
-
+"""

@@ -35,6 +35,8 @@ parser.add_argument('--samples', '-s', required=True,
 parser.add_argument('--coordinates', '-c', type=str,
                     help="""Start and stop coordinates of region of interest,
                     as well as chromosome. Format: chr[]:start-stop""")
+parser.add_argument('--out', '-o', required=True,
+                    help="""Output txt file.""")
 
 args = parser.parse_args()
 
@@ -147,7 +149,10 @@ for file in vcf_file_list:
         
 
         "Add coordinates, for those who pass filtering"
-        variants[sample_name]=[re.search(r"DP=(\d+);", info).group(1),re.search(r"AF=(\d+.\d+);", info).group(1)]
+        if sample_name in variants:
+            variants[sample_name].append([re.search(r"DP=(\d+);", info).group(1),re.search(r"AF=(\d+.\d+);", info).group(1), chrom, position])
+        else:
+            variants[sample_name]=[[re.search(r"DP=(\d+);", info).group(1),re.search(r"AF=(\d+.\d+);", info).group(1), chrom, position]]
         
         
         
@@ -159,33 +164,48 @@ print("Filtering vcf: Done!            \n",end="\r")
 
 
 
+
+with open(args.out, "w") as out:
+    out.write("Sample\tDP\tAF\tchrom\tpos\n")
+    for sample_name in variants:
+        for variant in variants[sample_name]:
+            out.write(sample_name+"\t"+"\t".join(variant)+"\n")
+
+""" Plots are to be made in R
 #make plot
 x=[]
 y=[]
 
-for sample in variants:    
-    x.append(float(variants[sample][0]))
-    y.append(float(variants[sample][1]))
-    print(sample)
+for sample in variants:
+    for variant in variants[sample]:
+        x.append(float(variant[0]))
+        y.append(float(variant[1]))
+        if int(variant[0])>100 and float(variant[1])<0.3:
+            print(sample, variant)
+
+
 
 #print(x)
 #print("\n\n")
 #print(y)
 
-plt.plot(x,y,"ro")
-plt.ylabel("Allele Depth")
+plt.plot(x,y,"ro",mfc='none')
+plt.ylabel("Allele Fraction")
 plt.xlabel("Total reads")
 plt.title("Allele Fraction vs total reads")
 plt.savefig("AlleleFraction_TotalReads.png")
 
-plt.plot(x,y,"ro")
-plt.ylabel("Allele Depth")
+plt.plot(x,y,"ro", mfc='none')
+axis=[i for i in range(1,int(max(x)))]
+plt.plot(axis,[5/i for i in axis])
+plt.ylabel("Allele Fraction")
 plt.xlabel("Total reads")
 plt.xlim(0,50)
+plt.ylim(0,1)
 plt.title("Allele Fraction vs total reads, xlim")
 plt.savefig("AlleleFraction_TotalReads_xlim.png")
 
-
+"""
 
 
 
