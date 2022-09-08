@@ -40,7 +40,6 @@ import argparse
 import glob
 import re
 import gzip
-from collections import OrderedDict
 import time
 
 #%% Time
@@ -179,7 +178,12 @@ for file in vcf_file_list:
             #if re.search(r"ucsc_rep=([a-z]+);", info).group(1)=="segdup":
             continue
         
-        variants[variant_ID][sample_name][2]= genotype
+        if genotype=="0/1" or genotype=="1/0":    
+            variants[variant_ID][sample_name][2]= "HETZ"
+        elif genotype=="1/1":
+            variants[variant_ID][sample_name][2]= "HMZA"
+        else:
+            print("Invalid genotype ", genotype)
     
     "Progress updates on number of vcf files."
     current_number_files+=1
@@ -205,7 +209,7 @@ print("Reading in gene.tsv: {:.2f}%".format(percentage),end="\r")
 
 tsv_info=dict()
 for file in tsv_file_list:
-    tsv_sample_name=file.split("/")[1]
+    tsv_sample_name=file.split("/")[-5]
     tsv_info[tsv_sample_name]=[]
     with open(file, "r") as tsv:
         for line in tsv:
@@ -228,16 +232,60 @@ print("Reading in gene.tsv: Done!            \n", end="\r")
 
 #%% 3. Fill holes in just created table. 
 
+
+def HMZR_NOEX(variant_ID, sample):
+    """
+    Assigns a genotype at a specific location for a specific sample, if no
+    variant is found at that location.
+    
+    Genotype HMZR is given if the variant lies in a gene, which has fpkm >= 1.
+    
+    Otherwise genotype NE is given.
+
+    Parameters
+    ----------
+    variant_ID= string
+                "chrom_position"
+    sample= string
+            sample name f.e. S00001
+
+    Returns
+    -------
+    genotype
+
+    """
+    genotype="NOEX"
+    for gene in tsv_info[sample]:
+        chrom, position= variant_ID.split("_")
+        #print(gene)
+        #Find gene that the variant is in
+        if chrom==gene[0]:
+            if int(gene[1])<int(position)<int(gene[2]):
+                #Check FPKM value:
+                if float(gene[4])>=1:
+                    #print(gene[4])
+                    genotype="HMZR"
+                    return genotype
+        
+    return genotype
+            
+
+
+
 with open(args.out, "w") as out:
     for variant in variants:
         new_line=[variant]
         #iterating through sorted sample names, to always have same order.
         for sample in sample_names:
-            if sample in variant:
-                new_line.append(variant[sample][2])
+            if sample in variants[variant]:
+                new_line.append(variants[variant][sample][2])
             else:
                 #figure out what genotype is. HMZR or NOEX.
-                
+                genotype=HMZR_NOEX(variant, sample)
+                new_line.append(genotype)
+        
+        out.write("\t".join(new_line)+"\n")
+        
      
         
         
