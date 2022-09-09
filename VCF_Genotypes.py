@@ -53,7 +53,7 @@ start_time=time.time()
 parser = argparse.ArgumentParser(prog='VCF Parser',
                                  usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
                                      [-c] "chrX:XXXXXX-XXXXXX"',
-                                 description="""Creates a variant table out of
+                                 description="""Creates a genotype table out of
                                  several samples. Containing location x sample.""")
 
 parser.add_argument('--samples', '-s', required=True,
@@ -182,6 +182,9 @@ for file in vcf_file_list:
             variants[variant_ID][sample_name][2]= "HETZ"
         elif genotype=="1/1":
             variants[variant_ID][sample_name][2]= "HMZA"
+        #although it should not happen....  But it clearly is.
+        elif genotype=="0/0":
+            variants[variant_ID][sample_name][2]= "HMZR"
         else:
             print("Invalid genotype ", genotype)
     
@@ -271,8 +274,11 @@ def HMZR_NOEX(variant_ID, sample):
             
 
 
-
+counter=0
+percentage=100*counter/len(list(variants.keys()))
+print("Going through variants: {:.2f}%".format(percentage),end="\r")
 with open(args.out, "w") as out:
+    out.write("Location\t"+"\t".join(sample_names)+"\n")
     for variant in variants:
         new_line=[variant]
         #iterating through sorted sample names, to always have same order.
@@ -285,11 +291,16 @@ with open(args.out, "w") as out:
                 new_line.append(genotype)
         
         out.write("\t".join(new_line)+"\n")
+        counter+=1
+        percentage=100*counter/len(list(variants.keys()))
+        print("Going through variants: {:.2f}%".format(percentage),end="\r")
         
      
         
         
-        
+#%% End time
+
+print("Run time: {:.2f} seconds.".format(time.time()-start_time))        
         
         
         
