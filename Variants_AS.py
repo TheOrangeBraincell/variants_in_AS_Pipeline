@@ -277,9 +277,9 @@ tsv_list=[]
 bam_list=[]
 
 for sample in most_variants:
-    tsv_file="/".join(most_variants[sample].split("/")[0:-1])+"/t/gene.tsv"
+    tsv_file="/".join(most_variants[sample].split("/")[0:-2])+"/t/gene.tsv"
     tsv_list.append(tsv_file)
-    bam_list.append("/".join(most_variants[sample].split("/")[0:-1])+"/alignment.bam")
+    bam_list.append("/".join(most_variants[sample].split("/")[0:-2])+"/alignment.bam")
     
     
 #print(tsv_list)
@@ -370,10 +370,10 @@ for sample_name in sample_names:
         
         "Before filtering, add all variants to genotype table."
         variant_ID=chrom+"_"+position
-        if sample_name in variants:
-            variants[variant_ID][sample_name]=[chrom, position, "ND"]
-        else:
-            variants[variant_ID]={sample_name:[chrom, position, "ND"]}
+        if variant_ID not in variants:
+            variants[variant_ID]=dict()
+            
+        variants[variant_ID][sample_name]=[chrom, position, "ND"]
         
         "Now filter the entries."
         #Keep values with MSI<7
