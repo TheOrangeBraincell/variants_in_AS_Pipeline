@@ -44,6 +44,9 @@ Instructions:
     #with coordinates f.e. Estrogen Receptor
     python Variants_AS.py -s ../Sample_Data/ -o ./Variants_AS_out/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE
     
+    #for server
+    python Variants_AS.py -s /raidset/mi3258mu-se/Mirjam -o./Variants_AS_out_ESR1/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE -c "chr6:151690496-152103274"
+    
     #or name f.e. Estrogen Receptor
     
 
