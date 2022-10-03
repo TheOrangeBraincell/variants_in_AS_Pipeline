@@ -9,7 +9,7 @@ Description:
     
     To be run on tnbc cohort for comparison to our variant files.
 Usage:
-    python Parse_TNBC.py -v ../Trip_Neg_data/subs.bulk.1639 -i ../Trip_Neg_data/PD_ID_External_IDs_WGS_GSE96058.txt -o tnbc_variants.tsv 
+    python Parse_TNBC.py -v ../Trip_Neg_data/subs.bulk.1639 -i ../Trip_Neg_data/PD_ID_External_IDs_WGS_GSE96058.txt -o tnbc_variants.bed 
     
 """
 
@@ -46,7 +46,7 @@ with open(args.ids, "r") as ids:
 counter=0
 unmatched_ids=set()
 with open(args.variants, "r") as tnbc, open(args.out, "w") as out:
-    out.write("#Sample\tchrom\tpos\tgenotype\n")
+    out.write("#chrom\tstart\tstop\tname\n")
     for line in tnbc:
         #skip header
         if line.startswith("#"):
@@ -60,7 +60,17 @@ with open(args.variants, "r") as tnbc, open(args.out, "w") as out:
             continue
         chrom, pos, ref, alt=line.split("\t")[4:8]
         genotype=line.split("\t")[41]
-        out.write("{}\t{}\t{}\t{}\n".format(sample, chrom, pos, genotype))        
+        #reformat genotype to match our format
+        if genotype=="1|1":
+            genotype="1/1"
+        elif genotype=="1|0" or genotype=="0|1":
+            genotype="0/1"
+        elif genotype=="0|0":
+            genotype="0/0"
+        else:
+            print("invalid genotype")
+            continue
+        out.write("chr{}\t{}\t{}\t{}\n".format(chrom, int(pos)-1, int(pos), sample+"_"+genotype+"_"+ref+"_"+alt))        
         
         
 
