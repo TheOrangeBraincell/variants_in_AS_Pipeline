@@ -211,8 +211,9 @@ with open(args.variants,"r") as bed, open(args.out, "w") as out:
                 for gene in chromosomes[chrom][area]:
                     if int(stop)>= int(gene_coordinates[gene][0]) and int(stop)<= int(gene_coordinates[gene][1]):
                         location="Intron"
-                        if gene in tsv_info[sample]:    
-                            fpkm=tsv_info[sample][gene]
+                        if sample in tsv_info:
+                            if gene in tsv_info[sample]:    
+                                fpkm=tsv_info[sample][gene]
                         for exon in chromosomes[chrom][area][gene]:
                             if int(stop)>=int(exon[0]) and int(stop)<=int(exon[1]):
                                 location="Exon"
