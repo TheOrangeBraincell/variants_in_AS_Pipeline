@@ -304,8 +304,8 @@ current_number_files=0
 percentage=100*(current_number_files/total_files)
 print("Extracting variants {:.2f}%".format(percentage), end="\r")
 with open("rna_variants_filtered.txt", "w") as filtered, open("rna_variants.txt", "w") as unfiltered:
-    filtered.write("#Sample\tchrom\tpos\tref\talt\tgenotype\tdbsnp\tLocation\tFPKM\n")
-    unfiltered.write("#Sample\tchrom\tpos\tref\talt\tgenotype\tdbsnp\tLocation\tFPKM\n")
+    filtered.write("Sample\tchrom\tposition\tref\talt\tgenotype\tdbsnp\tLocation\tFPKM\n")
+    unfiltered.write("Sample\tchrom\tposition\tref\talt\tgenotype\tdbsnp\tLocation\tFPKM\n")
     for file in vcf_file_list:
         vcf = gzip.open(file, "rt")
         sample_name=file.split("/")[-5]
