@@ -72,3 +72,4 @@ rna_subs_f%>%
 
          
 write.table(substitution_depths, "subs_depth.tsv", dec=".", col.names=TRUE, append=FALSE)
+#Do not do write table next time... do write_tsv instead.
