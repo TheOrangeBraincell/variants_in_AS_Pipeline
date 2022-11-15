@@ -150,6 +150,35 @@ if not os.path.exists(args.out):
 #%% User Defined Functions
 
 
+def add_to(events):
+    for e in events:
+        
+        #We dont want to add a last exon for AD or a first one for AA.
+        if e=="AA":
+            if entry[4]=="first" or coord_exons[key_string][4]=="first":
+                continue
+            
+            #make sure to not add any duplicate.
+            if entry not in potential_AA[gene]:
+                potential_AA[gene].append(entry)
+            if coord_exons[key_string] not in potential_AA[gene]:
+                potential_AA[gene].append(coord_exons[key_string])
+        
+            
+        if e=="AD":
+            if entry[4]=="last" or coord_exons[key_string][4]=="last":
+                continue
+            
+            #make sure to not add any duplicate.
+            if entry not in potential_AD[gene]:
+                potential_AD[gene].append(entry)
+            if coord_exons[key_string] not in potential_AD[gene]:
+                potential_AD[gene].append(coord_exons[key_string])
+        
+        
+        
+    
+
 def PSI_CE(sample, exon):
     """
     
@@ -430,95 +459,42 @@ for event in inputs:
                 
                 for coordinate in coordinates:
                     key_string=str(coordinate)+"_"+str(coordinates[coordinate])
-                    #If the start= start of another exon or within range of another exon its an event.
-                    if start >= coordinate and start <=coordinates[coordinate]:
-                        #if start == start of another exon, its only AD (on plus). otherwise its both.
+                    #if the start coordinate lies within a previous exon.
+                    if coordinate<=start<coordinates[coordinate] and coordinates[coordinate]!=stop:
+                        #Then either they share start, and we only have one event
                         if start==coordinate:
-                            if strand=="+" and entry[4]!="last" and coord_exons[key_string][4]!="last":
-                                if entry not in potential_AD[gene]:
-                                    potential_AD[gene].append(entry)
-                                if coord_exons[key_string] not in potential_AD[gene]:
-                                    potential_AD[gene].append(coord_exons[key_string])
-                            elif strand=="-" and entry[4]!="first":
-                                if entry not in potential_AA[gene]:
-                                    potential_AA[gene].append(entry)
-                                if coord_exons[key_string] not in potential_AA[gene]:
-                                    potential_AA[gene].append(coord_exons[key_string])
-                        else:
+                            # if + AD, if - AA.
                             if strand=="+":
-                                if entry[4]!="last" and coord_exons[key_string]!="last":
-                                    if entry not in potential_AD[gene]:
-                                        potential_AD[gene].append(entry)
-                                    if coord_exons[key_string] not in potential_AD[gene]:
-                                        potential_AD[gene].append(coord_exons[key_string])
-                            if strand=="-":
-                                if entry[4]!="first" and coord_exons[key_string]!="first":
-                                    if entry not in potential_AA[gene]:
-                                        potential_AA[gene].append(entry)
-                                    if coord_exons[key_string] not in potential_AA[gene]:
-                                        potential_AA[gene].append(coord_exons[key_string])
-                                    
+                                add_to(["AD"])
+                            else:
+                                add_to(["AA"])
+                        #or we have both events
+                        else:
+                            #both
+                            add_to(["AA","AD"])
                             
-                    #If the stop lays anywhere within the previous exon, its an event too.
-                    elif stop >= coordinate and stop <=coordinates[coordinate]:
-                        #If stop==stop of another exon it is only AA (+). otherwise its both.
+                    #if the stop coordinate lies within a previous exon.
+                    elif coordinate+1< stop <= coordinates[coordinate] and start!= coordinate:
+                        #either they share stop, and we have one event
                         if stop==coordinates[coordinate]:
-                            if strand=="+" and entry[4]!="first" and coord_exons[key_string][4!="first"]:
-                                if entry not in potential_AA[gene]:
-                                    potential_AA[gene].append(entry)
-                                if coord_exons[key_string] not in potential_AA[gene]:
-                                    potential_AA[gene].append(coord_exons[key_string])
-                            elif strand=="-" and entry[4]!="last" and coord_exons[key_string][4]!="last":
-                                if entry not in potential_AD[gene]:
-                                    potential_AD[gene].append(entry)
-                                if coord_exons[key_string] not in potential_AD[gene]:
-                                    potential_AD[gene].append(coord_exons[key_string])
-                        else:
+                            #if - AD, if + AA.
                             if strand=="-":
-                                if entry[4]!="last" and coord_exons[key_string]!="last":
-                                    if entry not in potential_AD[gene]:
-                                        potential_AD[gene].append(entry)
-                                    if coord_exons[key_string] not in potential_AD[gene]:
-                                        potential_AD[gene].append(coord_exons[key_string])
-                            if strand=="+":
-                                if entry[4]!="first" and coord_exons[key_string]!="first":
-                                    if entry not in potential_AA[gene]:
-                                        potential_AA[gene].append(entry)
-                                    if coord_exons[key_string] not in potential_AA[gene]:
-                                        potential_AA[gene].append(coord_exons[key_string])
-                                        
-                    #If the new exon contains a previous exon, its also an event.
-                    elif stop>coordinates[coordinate] and start<coordinate:
-                        if strand=="+":
-                            if entry[4]!="first" and coord_exons[key_string][4]!="first":
-                                if entry not in potential_AA[gene]:
-                                    potential_AA[gene].append(entry)
-                                if coord_exons[key_string] not in potential_AA[gene]:
-                                    potential_AA[gene].append(coord_exons[key_string])
-                        
-                        if strand=="-":
-                            if entry[4]!="last" and coord_exons[key_string][4]!="last":
-                                if entry not in potential_AD[gene]:
-                                    potential_AD[gene].append(entry)
-                                if coord_exons[key_string] not in potential_AD[gene]:
-                                    potential_AD[gene].append(coord_exons[key_string])
-                    #Note that the new exon being contained in a previous one does not need its own statement, as it will be caught by statement 1.
+                                add_to(["AD"])
+                            else:
+                                add_to(["AA"])
+                        #Or we have both events.
+                        else:
+                            #both
+                            add_to(["AA","AD"])
+                    # if this exon contains a previous exon completely then we have both
+                    elif coordinate > start and coordinates[coordinate] < stop:
+                        #both
+                        add_to(["AA","AD"])
                 
                 #Add new coordinates to compare new entries to.
                 coord_exons[str(start)+"_"+str(stop)]=entry
                 coordinates[start]=stop
-        """
-        print("AA-events")
-        for gene in potential_AA:
-            for i in potential_AA[gene]:
-                print(i[0]+":"+i[1]+"-"+i[2])
-        
-        print("AD-events")
-        for gene in potential_AD:
-            for i in potential_AD[gene]:
-                print(i[0]+":"+i[1]+"-"+i[2])
-        
-        """
+
         #print(potential_AA)
         #print(potential_AD)
         # Calculate psi scores for potential AA, if asked for.
