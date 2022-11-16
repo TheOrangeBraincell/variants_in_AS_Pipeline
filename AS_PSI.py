@@ -179,7 +179,7 @@ def add_to(events):
         
     
 
-def PSI_CE(sample, exon):
+def PSI_CE(sample, triplet):
     """
     
 
@@ -187,8 +187,8 @@ def PSI_CE(sample, exon):
     ----------
     sample : string
         Sample name
-    exon : list
-        contains chromosome, start, stop, strand information.
+    exon : nested list
+        contains chromosome, start, stop, strand information for 3 exons.
 
     Returns
     -------
@@ -196,6 +196,27 @@ def PSI_CE(sample, exon):
         PSI score
 
     """
+    #Needs coordinates for previous, CE and next exon.
+    previous= triplet[0]
+    CE= triplet[1]
+    following=triplet[2]
+    #A= Need number of reads within CE.
+    
+    #B= Number of reads within previous exon.
+    
+    #C= number of reads within next exon.
+    
+    #D= Number of spliced reads from previous to CE.
+    
+    #E= Number of spliced reads from CE to next.
+    
+    #F= number of spliced reads accross CE.
+    
+    # (A/length_CE) + D+ E/ ( A/length_CE + D + E + B/length_previous+ C/length_next+ F)
+    
+    
+    
+    
     
     return "NAN"
 
@@ -355,13 +376,57 @@ for event in inputs:
     "Casette Exons"
     
     if event.upper()=="CE":
-        out=open(args.out+"PSI_CE.tsv", "w")
         #if a transcript has 2 or less exons, there can be no CE.
         filtered_gene_dict=dict()
         for gene in gene_dict:
             filtered_gene_dict[gene]={k : v for k , v in gene_dict[gene].items() 
                                 if len(v) >2}
         
+        #For each potential CE, we need coordinates of previous, CE and following exon.
+        
+        draft_CE_dict=dict()
+        for gene in filtered_gene_dict:
+            draft_CE_dict[gene]=[]
+            for transcript in filtered_gene_dict[gene]:
+                for i in range(1, len(filtered_gene_dict[gene][transcript])-1):
+                    #remove database information and exon position infor. not needed.
+                    previous= filtered_gene_dict[gene][transcript][i-1][0:-2]
+                    CE= filtered_gene_dict[gene][transcript][i][0:-2]
+                    following=filtered_gene_dict[gene][transcript][i+1][0:-2]
+                    draft_CE_dict[gene].append([previous, CE, following])
+                    
+        
+        #Remove duplicates (because we use 2 databases, there might be duplicates from that but also from transcripts.)
+        CE_dict=dict()
+        for gene in draft_CE_dict:
+            #remove empty genes.
+            if len(draft_CE_dict[gene])==0:
+                continue
+            CE_dict[gene]=[]
+            for triplet in draft_CE_dict[gene]:
+                if triplet not in CE_dict[gene]:
+                    CE_dict[gene].append(triplet)
+        
+        #calculate PSI scores and write output file.
+        out=open(args.out+"PSI_CE.tsv", "w")
+        #make file header
+        out.write("Location\t"+"\t".join(sample_names)+"\n")
+        for gene in CE_dict:
+            strand=CE_dict[gene][0][0][3]
+            out.write("# "+ gene+" , "+ strand+"\n")
+            for triplet in CE_dict[gene]:
+                PSI_scores=[]
+                for sample in sample_names:
+                    PSI=PSI_CE(sample, triplet)
+                    PSI_scores.append(PSI)
+                
+                #Write results, the CE as identifier
+                CE=triplet[1]
+                out.write("_".join(CE[0:3])+"\t"+"\t".join(PSI_scores)+"\n")
+            
+            
+        
+        """
         #Remove first and last exon for each transcript, as they cannot be CE
         new_gene_dict=dict()
         for gene in filtered_gene_dict:
@@ -372,9 +437,9 @@ for event in inputs:
                 
         CE_gene_dict=new_gene_dict
         #print(CE_gene_dict)
-        """Transcript IDs are no longer required, and additionally there
-        is definitely duplicate exons between R and G as well as within each
-        of them. Those need to be removed."""
+        #Transcript IDs are no longer required, and additionally there
+        #is definitely duplicate exons between R and G as well as within each
+        #of them. Those need to be removed.
         
         #Creates dictionary with potential casette exons per gene.
         gene_exons=dict()
@@ -395,7 +460,7 @@ for event in inputs:
                                 exons_db["_".join(exon[0:-1])]+=exon[-1]
                         else:
                             exons_db["_".join(exon[0:-1])]=exon[-1]
-
+            
         #Make header for output file
         out.write("#PSI Table CE \n")
         out.write("Location\t"+"\t".join(sample_names)+"\n")
@@ -419,6 +484,8 @@ for event in inputs:
                 out.write("_".join(entry[0:3])+"\t" +"\t".join(PSI_scores)+"\n")
         
         out.close()
+    """
+    
     
     #"Alternative Donors/Acceptors"
     elif event.upper()=="AD" or event.upper()=="AA":
@@ -556,42 +623,6 @@ for event in inputs:
                         IR=strand+"_"+chrom+"_"+"_".join(gene_dict[gene][trans_ID][i][1:3])+"_"+"_".join(gene_dict[gene][trans_ID][i+1][1:3])
                         if IR not in IR_coord[gene]:                        
                             IR_coord[gene].append(IR)
-        """        
-        #Find IR events.
-        IR_coord=dict()
-        #key=start, value=stop
-        coordinates=dict()
-        for gene in gene_exons:
-            IR_coord[gene]=[]
-            #Go through exons to find potentials
-            for entry in gene_exons[gene]:
-                start=int(entry[1])
-                stop=int(entry[2])
-                strand=entry[3]
-                
-                #Flags
-                Start_Found=False
-                Stop_Found=False
-                exon1=""
-                exon2=""
-                #go through previously saved coordinates. Check if start and stop lay in two different exons.
-                for starts, stops in coordinates:
-                    key_string=str(starts)+"_"+str(stops)
-                    if Start_Found==True and Stop_Found==True:
-                        if exon1!=exon2 and exon1!="" and exon2!="":
-                            IR_coord[gene].append(entry)
-                            Start_Found=False
-                            Stop_Found=False
-                    if start >=starts and start <=stops:
-                        Start_Found=True
-                        exon1= key_string
-                        continue
-                    elif stop>=starts and stop <=stops:
-                        Stop_Found=True
-                        exon2=key_string
-                        continue
-                    
-        """
         
         out=open(args.out+"PSI_IR.tsv", "w")
         out.write("#PSI Table IR \n")
