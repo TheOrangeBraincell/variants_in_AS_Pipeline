@@ -38,10 +38,10 @@ Useage:
         Run in command line.
         
         #with coordinates f.e. Estrogen Receptor
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_scores/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE
+        python AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE
         
-        #With coordinates f.e. SYNE1 (neg strand)
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_scores/ -c "chr6:152121515-152652710" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
+        #With coordinates f.e. BRCA1 (neg strand)
+        python AS_PSI.py -s ../Sample_Data/ -o PSI_BRCA1/ -c "chr17:43044295-43125364" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
         
         
         #for server
@@ -459,13 +459,13 @@ for file in [args.gencode, args.refseq]:
                 
                 
                 #make entries for each exon.
-                for i in range(0, number_exons-1):
+                for i in range(0, number_exons):
                     if i==0:
                         if strand=="+":
                             position= "first"
                         else:
                             position="last"
-                    elif i==number_exons-2:
+                    elif i==number_exons-1:
                         if strand=="+":
                             position="last"
                         else:
@@ -516,52 +516,7 @@ for event in inputs:
             filtered_gene_dict[gene]={k : v for k , v in gene_dict[gene].items() 
                                 if len(v) >2}
         
-        """
-        #For each potential CE, we need coordinates of previous, CE and following exon.
-        
-        draft_CE_dict=dict()
-        for gene in filtered_gene_dict:
-            draft_CE_dict[gene]=[]
-            for transcript in filtered_gene_dict[gene]:
-                for i in range(1, len(filtered_gene_dict[gene][transcript])-1):
-                    #remove database information and exon position infor. not needed.
-                    previous= filtered_gene_dict[gene][transcript][i-1][0:-2]
-                    CE= filtered_gene_dict[gene][transcript][i][0:-2]
-                    following=filtered_gene_dict[gene][transcript][i+1][0:-2]
-                    draft_CE_dict[gene].append([previous, CE, following])
-                    
-        
-        #Remove duplicates (because we use 2 databases, there might be duplicates from that but also from transcripts.)
-        CE_dict=dict()
-        for gene in draft_CE_dict:
-            #remove empty genes.
-            if len(draft_CE_dict[gene])==0:
-                continue
-            CE_dict[gene]=[]
-            for triplet in draft_CE_dict[gene]:
-                if triplet not in CE_dict[gene]:
-                    CE_dict[gene].append(triplet)
-        
-        #calculate PSI scores and write output file.
-        out=open(args.out+"PSI_CE.tsv", "w")
-        #make file header
-        out.write("Location\t"+"\t".join(sample_names)+"\n")
-        for gene in CE_dict:
-            strand=CE_dict[gene][0][0][3]
-            out.write("# "+ gene+" , "+ strand+"\n")
-            for triplet in CE_dict[gene]:
-                PSI_scores=[]
-                for sample in sample_names:
-                    PSI=PSI_CE(sample, triplet)
-                    PSI_scores.append(PSI)
-                
-                #Write results, the CE as identifier
-                CE=triplet[1]
-                out.write("_".join(CE[0:3])+"\t"+"\t".join(PSI_scores)+"\n")
-            
-            
-        
-        """
+        #print(filtered_gene_dict)
         #Remove first and last exon for each transcript, as they cannot be CE
         new_gene_dict=dict()
         for gene in filtered_gene_dict:
@@ -606,6 +561,8 @@ for event in inputs:
             #Extract strand information for header (for each gene)
             strand=gene_exons[gene][0][3]
             
+            #Sort exons based on start coordinate.
+            entry_list= gene_exons[gene].sort(key=lambda x: int(x[1])) 
             #Create gene header
             out.write("#"+gene+", "+strand+"\n")
             for entry in gene_exons[gene]:
