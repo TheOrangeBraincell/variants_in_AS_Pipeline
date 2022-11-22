@@ -38,7 +38,7 @@ Useage:
         Run in command line.
         
         #with coordinates f.e. Estrogen Receptor
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE
+        python AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
         
         #With coordinates f.e. BRCA1 (neg strand)
         python AS_PSI.py -s ../Sample_Data/ -o PSI_BRCA1/ -c "chr17:43044295-43125364" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
@@ -562,7 +562,7 @@ for event in inputs:
             strand=gene_exons[gene][0][3]
             
             #Sort exons based on start coordinate.
-            entry_list= gene_exons[gene].sort(key=lambda x: int(x[1])) 
+            gene_exons[gene].sort(key=lambda x: int(x[1]))
             #Create gene header
             out.write("#"+gene+", "+strand+"\n")
             for entry in gene_exons[gene]:
@@ -672,6 +672,8 @@ for event in inputs:
                 
                     #Create gene header
                     out.write("#"+gene+", "+strand+"\n")
+                    #sort after exon start coordinate
+                    potential_AA[gene].sort(key=lambda x: int(x[1]))
                 for exon in potential_AA[gene]:
                     PSI_scores=[]
                     for sample in sample_names:
@@ -691,6 +693,8 @@ for event in inputs:
                 
                     #Create gene header
                     out.write("#"+gene+", "+strand+"\n")
+                    #sort after exon stop coordinate
+                    potential_AD[gene].sort(key=lambda x: int(x[2]))
                 for exon in potential_AD[gene]:
                     PSI_scores=[]
                     for sample in sample_names:
@@ -730,6 +734,8 @@ for event in inputs:
             
                 #Create gene header
                 out.write("#"+gene+", "+strand+"\n")
+                #sort by first exons start.
+                IR_coord[gene].sort(key=lambda x: int(x.split("_")[2]))
             for exon in IR_coord[gene]:
                 PSI_scores=[]
                 for sample in sample_names:
