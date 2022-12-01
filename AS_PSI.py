@@ -38,10 +38,10 @@ Useage:
         Run in command line.
         
         #with coordinates f.e. Estrogen Receptor
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
+        python AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
         
         #With coordinates f.e. BRCA1 (neg strand)
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_BRCA1/ -c "chr17:43044295-43125364" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
+        python AS_PSI.py -s ../Sample_Data/ -o PSI_BRCA1/ -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
         
         
         #for server
@@ -58,7 +58,6 @@ Possible Bugs:
 import argparse
 import glob
 import re
-import gzip
 import time
 import pysam
 import os
@@ -109,8 +108,9 @@ if args.coordinates:
     if re.search(r'[a-z]{3}[MXY]?\d*:\d+-\d+', args.coordinates):
         coord = re.search(r'([a-z]{3}[MXY]?\d*):(\d+)-(\d+)', args.coordinates)
         coord_chrom = coord.group(1)
-        coord_start = int(coord.group(2))
-        coord_stop = int(coord.group(3))
+        #To adjust for different inclusivity of stop/start for plus and minus strand, expand coordinate range by 1.
+        coord_start = int(coord.group(2))-1
+        coord_stop = int(coord.group(3))+1
 
     else:
         raise argparse.ArgumentTypeError("""The given coordinates are in the 
@@ -146,38 +146,88 @@ if args.name and args.coordinates:
 #Create output directory if not there already
 if not os.path.exists(args.out):
     os.makedirs(args.out)
+    
+    
+#%% Testing new stuff
+
+"""
+#How to progress bar.
+n=70
+print("Testing")
+for i in range(0,n+1):
+    progress=int(i*100/(n))
+    print("#"*progress+" "*(100-progress)+" "+str(round(i/(n) *100, 2)) + "%", end="\r")
+
+print("#"*progress+" "*(50-progress)+" "+str(round(i/(n) *100, 2)) + "%\n", end="\r")
+"""
+
 
 #%% User Defined Functions
 
 
-def add_to(events):
+def add_to(events, AA_counter, AD_counter):
     for e in events:
         
         #We dont want to add a last exon for AD or a first one for AA.
         if e=="AA":
             if entry[4]=="first" or coord_exons[key_string][4]=="first":
                 continue
+            #We want to save the actual exon starts (not just smaller coordinate.)
+            strand=entry[3]
+            if strand=="+":
+                start1=entry[1]
+                start2=coord_exons[key_string][1]
             
-            #make sure to not add any duplicate.
-            if entry not in potential_AA[gene]:
-                potential_AA[gene].append(entry)
-            if coord_exons[key_string] not in potential_AA[gene]:
-                potential_AA[gene].append(coord_exons[key_string])
+            else:
+                start1=entry[2]
+                start2=coord_exons[key_string][2]
+            #Go through previous entries in potential_AA to make sure theres no duplicates.
+            event_exists=False
+            for events in potential_AA[gene]:
+                if start1 in events and start2 not in events:
+                    events.append(start2)
+                    event_exists=True
+                elif start2 in events and start1 not in events:
+                    events.append(start1)
+                    event_exists=True
+            
+            #If the event is not found, make a new one.
+            if event_exists==False:
+                potential_AA[gene].append([start1, start2])
+                AA_counter+=1
         
             
         if e=="AD":
             if entry[4]=="last" or coord_exons[key_string][4]=="last":
                 continue
             
-            #make sure to not add any duplicate.
-            if entry not in potential_AD[gene]:
-                potential_AD[gene].append(entry)
-            if coord_exons[key_string] not in potential_AD[gene]:
-                potential_AD[gene].append(coord_exons[key_string])
+            #save exon stops (actual, not just bigger coordinate)
+            strand=entry[3]
+            if strand=="+":
+                stop1=entry[2]
+                stop2=coord_exons[key_string][2]
+            
+            else:
+                stop1=entry[1]
+                stop2=coord_exons[key_string][1]
+            #Go through previous entries in potential_AA to make sure theres no duplicates.
+            event_exists=False
+            for events in potential_AD[gene]:
+                if stop1 in events and stop2 not in events:
+                    events.append(stop2)
+                    event_exists=True
+                elif stop2 in events and stop1 not in events:
+                    events.append(stop1)
+                    event_exists=True
+                elif stop1 in events and stop2 in events:
+                    event_exists=True
+                    
+            #If the event is not found, make a new one.
+            if event_exists==False:
+                potential_AD[gene].append([stop1, stop2])
+                AD_counter+=1
         
-        
-        
-    
+    return(AA_counter, AD_counter)
 
 def PSI_CE(sample, CE, gene):
     """
@@ -244,7 +294,7 @@ def PSI_CE(sample, CE, gene):
     
     #For the spliced reads, we need to fetch a bigger region and then recognise the spliced alignments.
     #We dont want to miss any reads, so we make this region the gene range the exon is in.
-    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][0], gene_ranges[gene][1])
+    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][2], gene_ranges[gene][3])
     
     #initialize counters
     counter_left=0
@@ -340,7 +390,7 @@ def PSI_CE(sample, CE, gene):
     
     return PSI
 
-def PSI_AA(sample, exon):
+def PSI_AA(gene, sample, event, start):
     """
     
 
@@ -348,19 +398,171 @@ def PSI_AA(sample, exon):
     ----------
     sample : string
         Sample name
-    exon : list
-        contains chromosome, start, stop, strand information.
-
+    event : list
+        contains all starts for this particular AA event.
+    start: 
+        start that we currently calculate PSI score for.
     Returns
     -------
     str
         PSI score
 
     """
+    #Extract gene information
+    chrom, strand, gene_start, gene_stop=gene_ranges[gene]
     
-    return "NAN"
+    #Find .bam file corresponding to sample name.
+    for file in bam_file_list:
+        if sample in file:
+            bam_file=file
+            index_file=file[0:-1]+"i"
+            break
+    #Initialize opening of file
+    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
+    
+    #Count reads
+    #Find total number of spliced reads with coordinates
+    spliced_counters=[0]*len(event)
+    #Open bam file in gene range.
+    spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
+    
+    #Go through reads
+    read_dict=dict()
+    for read in spliced_reads:
+        #only spliced reads
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        #exclude second read of pair, if maps to overlapping region.
+        read_name=read.query_name
+        read_start=int(read.reference_start)
+        read_length=int(read.infer_query_length())
+        if read_name in read_dict:
+            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                continue
+        else:
+            read_dict[read_name]=[read_start, read_start+read_length] 
+        
+        "Get strand information, exclude reads on wrong strand"
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=strand:
+            continue
+        
+        #Allow for several splice junctions in one read.
+        current_cigar = read.cigarstring
+        current_start = int(read_start)
+        
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            exon1 = int(junction.group(1))
+            intron = int(junction.group(2))
+            exon2 = int(junction.group(3))
+            exon1_start = current_start
+            exon1_end = exon1_start+exon1+1  #exclusive
+            exon2_start = exon1_end+intron -1 #inclusive
+                
+            #skip alignments with less than 3 matching bases in an exon.
+            if exon1<3 or exon2<3:
+                # update cigar string
+                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+                current_start= exon2_start
+                continue
+            
+            #if sample=="S000001":
+            #    print(start, exon1_end)
+            #Update counters based on matching starts
+            if strand=="+":
+                #Then the AA starts have to match the exon2_starts
+                for i in range(0, len(event)):
+                    if event[i]==str(exon2_start):
+                        spliced_counters[i]+=1
+            else:
+                #Then the AA starts have to match the exon1_ends
+                for i in range(0, len(event)):
+                    #Same as for AD on the plus strand, the exon end has to be adjusted, because we calculate it to be exclusive.
+                    if event[i]==str(exon1_end-1):
+                        spliced_counters[i]+=1
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= exon2_start
+    
+    #Find difference reads
+    difference_counters=[]
+    for i in range(0, len(event)-1):
+        start1=int(event[i])
+        start2=int(event[i+1])
+        difference_reads=samfile.fetch(chrom, start1, start2)
+        counter=0
+        
+        read_dict=dict()
+        #Filter reads
+        for read in difference_reads:
+            #no spliced reads
+            if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                continue
+            #exclude second read of pair, if maps to overlapping region.
+            read_name=read.query_name
+            read_start=int(read.reference_start)
+            read_length=int(read.infer_query_length())
+            if read_name in read_dict:
+                if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+                read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                    continue
+            else:
+                read_dict[read_name]=[read_start, read_start+read_length] 
+            
+            #Get strand information, exclude reads on wrong strand
+            if read.mate_is_reverse and read.is_read1:
+                read_strand="-"
+            elif read.mate_is_reverse and read.is_read2:
+                read_strand="+"
+            elif read.mate_is_forward and read.is_read1:
+                read_strand="+"
+            elif read.mate_is_forward and read.is_read2:
+                read_strand="-"
+            
+            if read_strand!=strand:
+                continue
+            
+            #Filter conditions passed:
+            counter+=1
+        #Add difference reads into list
+        difference_counters.append(counter)
+    
+    #Note that the first start, on the minus strand, has the highest coordinate.
+    start_number=event.index(start)
+    if start_number!=0 and strand=="+":
+        IR=difference_counters[start_number-1]+spliced_counters[start_number]
+        ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+    elif start_number==0 and strand=="+":
+        IR=spliced_counters[start_number]
+        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+    elif start_number!=(len(event)-1) and strand=="-":
+        IR=difference_counters[start_number-1]+spliced_counters[start_number]
+        ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+    else:
+        IR=spliced_counters[start_number]
+        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+    
+    if ER+ IR !=0:
+        PSI=str(round(IR/(IR+ER),3))
+    else:
+        PSI="NAN"
+        
+    #if sample=="S000001":
+    #    print(start, spliced_counters, difference_counters)
+    return PSI
 
-def PSI_AD(sample, exon):
+def PSI_AD(gene, sample, exon, stop):
     """
     
 
@@ -368,15 +570,167 @@ def PSI_AD(sample, exon):
     ----------
     sample : string
         Sample name
-    exon : list
-        contains chromosome, start, stop, strand information.
-
+    event : list
+        contains all starts for this particular AA event.
+    start: 
+        start that we currently calculate PSI score for.
     Returns
     -------
     str
         PSI score
 
     """
+    #Extract gene information
+    chrom, strand, gene_start, gene_stop=gene_ranges[gene]
+    
+    #Find .bam file corresponding to sample name.
+    for file in bam_file_list:
+        if sample in file:
+            bam_file=file
+            index_file=file[0:-1]+"i"
+            break
+    #Initialize opening of file
+    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
+    
+    #Count reads
+    #Find total number of spliced reads with coordinates
+    spliced_counters=[0]*len(event)
+    #Open bam file in gene range.
+    spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
+    
+    #Go through reads
+    read_dict=dict()
+    for read in spliced_reads:
+        #only spliced reads
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        #exclude second read of pair, if maps to overlapping region.
+        read_name=read.query_name
+        read_start=int(read.reference_start)
+        read_length=int(read.infer_query_length())
+        if read_name in read_dict:
+            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                continue
+        else:
+            read_dict[read_name]=[read_start, read_start+read_length] 
+        
+        "Get strand information, exclude reads on wrong strand"
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=strand:
+            continue
+        
+        #Allow for several splice junctions in one read.
+        current_cigar = read.cigarstring
+        current_start = int(read_start)
+        
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            exon1 = int(junction.group(1))
+            intron = int(junction.group(2))
+            exon2 = int(junction.group(3))
+            exon1_start = current_start
+            exon1_end = exon1_start+exon1+1  #exclusive
+            exon2_start = exon1_end+intron -1 #inclusive
+                
+            #skip alignments with less than 3 matching bases in an exon.
+            if exon1<3 or exon2<3:
+                # update cigar string
+                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+                current_start= exon2_start
+                continue
+            #if sample=="S000001":
+            #    print(stop, exon2_start)
+            #Update counters based on matching starts
+            if strand=="+":
+                #Then the AA starts have to match the exon2_starts
+                for i in range(0, len(event)):
+                    #The coordinates on plus strand seem to be shifted for AD, by 1. Because we calculate it to be exclusive.
+                    if str(event[i])==str(exon1_end-1):
+                        spliced_counters[i]+=1
+            else:
+                #Then the AA starts have to match the exon1_ends
+                for i in range(0, len(event)):
+                    if str(event[i])==str(exon2_start):
+                        spliced_counters[i]+=1
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= exon2_start
+    
+    #Find difference reads
+    difference_counters=[]
+    for i in range(0, len(event)-1):
+        stop1=int(event[i])
+        stop2=int(event[i+1])
+        difference_reads=samfile.fetch(chrom, stop1, stop2)
+        counter=0
+        
+        read_dict=dict()
+        #Filter reads
+        for read in difference_reads:
+            #no spliced reads
+            if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                continue
+            #exclude second read of pair, if maps to overlapping region.
+            read_name=read.query_name
+            read_start=int(read.reference_start)
+            read_length=int(read.infer_query_length())
+            if read_name in read_dict:
+                if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+                read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                    continue
+            else:
+                read_dict[read_name]=[read_start, read_start+read_length] 
+            
+            #Get strand information, exclude reads on wrong strand
+            if read.mate_is_reverse and read.is_read1:
+                read_strand="-"
+            elif read.mate_is_reverse and read.is_read2:
+                read_strand="+"
+            elif read.mate_is_forward and read.is_read1:
+                read_strand="+"
+            elif read.mate_is_forward and read.is_read2:
+                read_strand="-"
+            
+            if read_strand!=strand:
+                continue
+            
+            #Filter conditions passed:
+            counter+=1
+        #Add difference reads into list
+        difference_counters.append(counter)
+    
+    #Note that the first start, on the minus strand, has the highest coordinate.
+    stop_number=event.index(stop)
+    if stop_number!=0 and strand=="+":
+        IR=difference_counters[stop_number-1]+spliced_counters[stop_number]
+        ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+    elif stop_number==0 and strand=="+":
+        IR=spliced_counters[stop_number]
+        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+    elif stop_number!=(len(event)-1) and strand=="-":
+        IR=difference_counters[stop_number-1]+spliced_counters[stop_number]
+        ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+    else:
+        IR=spliced_counters[stop_number]
+        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+    
+    if ER+ IR !=0:
+        PSI=str(round(IR/(IR+ER),3))
+    else:
+        PSI="NAN"
+        
+    return PSI
+    
     
     return "NAN"
 
@@ -445,14 +799,10 @@ for file in [args.gencode, args.refseq]:
                         int(exon_bigger[-1])>coord_stop or chrom!=coord_chrom:
                         continue
                 
-                #if name is given:
-                if args.name:
-                    if gene_name!=args.name:
-                        continue
-                
                 #if its a new gene symbol, initialize inner dictionary
                 if gene_name not in list(gene_dict.keys()):
                     gene_dict[gene_name]={trans_ID:[]}
+                    
                 else:
                     #add transcript ID to gene_dict dictionary
                     gene_dict[gene_name][trans_ID]=[]
@@ -487,11 +837,12 @@ for gene in gene_dict:
     for trans_ID in gene_dict[gene]:
         starts.append(int(gene_dict[gene][trans_ID][0][1]))
         stops.append(int(gene_dict[gene][trans_ID][-1][2]))
+        chrom=gene_dict[gene][trans_ID][0][0]
+        strand=gene_dict[gene][trans_ID][0][3]
     #Take smallest start and biggest stop as range of gene.
-    gene_ranges[gene]=[min(starts), max(stops)]
+    gene_ranges[gene]=[chrom, strand, min(starts), max(stops)]
 
-
-
+#print(gene_ranges)
 #%% SAMPLE NAMES?
 
 #All bam files.
@@ -504,18 +855,21 @@ sample_names=[i.split("/")[-4] for i in bam_file_list]
 
 #%% Identify alternative splicing events.
 
+#To not find AA and AD twice:
+AA_AD_dict=False
 
 for event in inputs:
     
     "Casette Exons"
     
     if event.upper()=="CE":
+        print("\nFinding Casette Exons in annotated Transcripts: \n", end="\r")
         #if a transcript has 2 or less exons, there can be no CE.
         filtered_gene_dict=dict()
         for gene in gene_dict:
             filtered_gene_dict[gene]={k : v for k , v in gene_dict[gene].items() 
                                 if len(v) >2}
-        
+        print("#"*25+ " "*75+ "  25 %", end="\r")
         #print(filtered_gene_dict)
         #Remove first and last exon for each transcript, as they cannot be CE
         new_gene_dict=dict()
@@ -526,6 +880,7 @@ for event in inputs:
                     new_gene_dict[gene][trans_ID]=[i for i in filtered_gene_dict[gene][trans_ID] if i[4]=="middle"]  
                 
         CE_gene_dict=new_gene_dict
+        print("#"*50+ " "*50+ " 50 %", end="\r")
         #print(CE_gene_dict)
         #Transcript IDs are no longer required, and additionally there
         #is definitely duplicate exons between R and G as well as within each
@@ -536,6 +891,7 @@ for event in inputs:
         #Creates a dictionary where each exon is listed with its database (in case needed later)
         exons_db=dict()
         
+        CE_counter=0
         for gene in CE_gene_dict:
             if CE_gene_dict[gene]:
                 gene_exons[gene]=[]
@@ -543,6 +899,7 @@ for event in inputs:
                     for exon in CE_gene_dict[gene][trans_ID]:
                         if exon[0:-1] not in gene_exons[gene]:
                             gene_exons[gene].append(exon[0:-1])
+                            CE_counter+=1
                         if "_".join(exon[0:-1]) in exons_db:
                             if exon[-1] in exons_db["_".join(exon[0:-1])]:
                                 continue
@@ -551,15 +908,18 @@ for event in inputs:
                         else:
                             exons_db["_".join(exon[0:-1])]=exon[-1]
             
-        
+        print("#"*100+ " 100 %\n", end="\r")
+        print("Calculating PSI scores for Casette Exons: \n", end="\r")
         out=open(args.out+"PSI_CE.tsv", "w")
         #Make header for output file
         out.write("#PSI Table CE \n")
         out.write("Location\t"+"\t".join(sample_names)+"\n")
+        #progress counter
+        exons_done=0
         #Go through all potential casette exons, and calculate their PSI scores.
         for gene in gene_exons:
             #Extract strand information for header (for each gene)
-            strand=gene_exons[gene][0][3]
+            strand=gene_ranges[gene][1]
             
             #Sort exons based on start coordinate.
             gene_exons[gene].sort(key=lambda x: int(x[1]))
@@ -567,141 +927,240 @@ for event in inputs:
             out.write("#"+gene+", "+strand+"\n")
             for entry in gene_exons[gene]:
                 PSI_scores=[]
-                chrom=exon[0]
-                start=int(exon[1]) #Note that these are start and stop coor
-                stop=int(exon[2]) #not start and stop of exon. Strand dependent.
-                strand=exon[3]
-                
                 for sample in sample_names:
                     PSI_scores.append(PSI_CE(sample, entry, gene))
                     
-                
+                exons_done+=1
                 out.write("_".join(entry[0:3])+"\t" +"\t".join(PSI_scores)+"\n")
-        
+                #Progress update
+                percentage=round(exons_done/CE_counter *100, 2)
+                print("#"*int(percentage)+" "*(100-int(percentage))+" " + str(percentage)+" %", end="\r")
+        #Finish the bar.
+        print("#"*int(percentage)+" "*(100-int(percentage))+" " + str(percentage)+" %\n", end="\r")
         out.close()
-    
-    
+        print("Writing Casette Exon coordinates into .bed file ... ", end="\r")
+        "Print .bed file, can be removed later."
+        out=open(args.out+"CE.bed", "w")
+        for gene in gene_exons:
+            strand=gene_exons[gene][0][3]
+            
+            for entry in gene_exons[gene]:
+                chrom, start, stop, strand = entry[0:4]
+                name="CE_"+chrom+"_"+start+"_"+stop
+                out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, start, stop, name, strand))
+        out.close()
+        print("Writing Casette Exon coordinates into .bed file: Done! \n", end="\r")
     
     #"Alternative Donors/Acceptors"
     elif event.upper()=="AD" or event.upper()=="AA":
-        #Creates dictionary with exons per gene.
-        gene_exons=dict()
-        
-        #Remove transcript ids and duplicate exons.
-        for gene in gene_dict:
-            if gene_dict[gene]:
-                gene_exons[gene]=[]
-                for trans_ID in gene_dict[gene]:
-                    for exon in gene_dict[gene][trans_ID]:
-                        if exon[0:-1] not in gene_exons[gene]:
-                            gene_exons[gene].append(exon[0:-1])
-        
-        #Go through all exons per gene to find alternative donors/acceptors.
-        potential_AA=dict()
-        potential_AD=dict()
-        #key=start, value=stop
-        coordinates=dict()
-        #key=start_stop, value=entry.
-        coord_exons=dict()
-        for gene in gene_exons:
-            #Initiate potential AA/AD for each gene.
-            potential_AA[gene]=[]
-            potential_AD[gene]=[]
-            #Go through exons to find potentials
-            for entry in gene_exons[gene]:
-                start=int(entry[1])
-                stop=int(entry[2])
-                strand=entry[3]
-                
-                #print(start, stop)
-                
-                """If the start or stop is shared with another exon, then we found potential AS.
-                But one of the exons can also be completely within another exon, or completely
-                surrounding the other one. Or having one coordinate within the other. That also counts"""
-                
-                for coordinate in coordinates:
-                    key_string=str(coordinate)+"_"+str(coordinates[coordinate])
-                    #if the start coordinate lies within a previous exon.
-                    if coordinate<=start<coordinates[coordinate] and coordinates[coordinate]!=stop:
-                        #Then either they share start, and we only have one event
-                        if start==coordinate:
-                            # if + AD, if - AA.
-                            if strand=="+":
-                                add_to(["AD"])
+        if AA_AD_dict ==False:
+            print("\nFinding Alternative Donors/Acceptors: \n", end="\r")
+            #Creates dictionary with exons per gene.
+            gene_exons=dict()
+            
+            #exon count
+            total_exon_count=0
+            #Remove transcript ids and duplicate exons.
+            for gene in gene_dict:
+                if gene_dict[gene]:
+                    gene_exons[gene]=[]
+                    for trans_ID in gene_dict[gene]:
+                        for exon in gene_dict[gene][trans_ID]:
+                            if exon[0:-1] not in gene_exons[gene]:
+                                gene_exons[gene].append(exon[0:-1])
+                                total_exon_count+=1
+            
+            #Go through all exons per gene to find alternative donors/acceptors.
+            potential_AA=dict()
+            potential_AD=dict()
+            #key=start, value=stop
+            coordinates=dict()
+            #key=start_stop, value=entry.
+            coord_exons=dict()
+            #initiate progress counter
+            c=0
+            #For progress updates during PSI.
+            AA_counter=0
+            AD_counter=0
+            for gene in gene_exons:
+                #Initiate potential AA/AD for each gene.
+                potential_AA[gene]=[]
+                potential_AD[gene]=[]
+                #Go through exons to find potentials
+                for entry in gene_exons[gene]:
+                    start=int(entry[1])
+                    stop=int(entry[2])
+                    strand=entry[3]
+                    
+                    #print(start, stop)
+                    
+                    """If the start or stop is shared with another exon, then we found potential AS.
+                    But one of the exons can also be completely within another exon, or completely
+                    surrounding the other one. Or having one coordinate within the other. That also counts"""
+                    
+                    for coordinate in coordinates:
+                        key_string=str(coordinate)+"_"+str(coordinates[coordinate])
+                        #if the start coordinate lies within a previous exon.
+                        #print(coordinates[coordinate], stop)
+                        if coordinate<=start<coordinates[coordinate] and coordinates[coordinate]!=stop:
+                            #Then either they share start, and we only have one event
+                            if start==coordinate:
+                                # if + AD, if - AA.
+                                if strand=="+":
+                                    AA_counter, AD_counter=add_to(["AD"], AA_counter, AD_counter)
+                                else:
+                                    #print(entry, coord_exons[key_string])
+                                    AA_counter, AD_counter=add_to(["AA"], AA_counter, AD_counter)
+                            #or we have both events
                             else:
-                                add_to(["AA"])
-                        #or we have both events
-                        else:
-                            #both
-                            add_to(["AA","AD"])
-                            
-                    #if the stop coordinate lies within a previous exon.
-                    elif coordinate+1< stop <= coordinates[coordinate] and start!= coordinate:
-                        #either they share stop, and we have one event
-                        if stop==coordinates[coordinate]:
-                            #if - AD, if + AA.
-                            if strand=="-":
-                                add_to(["AD"])
+                                #both
+                                AA_counter, AD_counter=add_to(["AA","AD"], AA_counter, AD_counter)
+                                
+                        #if the stop coordinate lies within a previous exon.
+                        elif coordinate+1< stop <= coordinates[coordinate] and start!= coordinate:
+                            #either they share stop, and we have one event
+                            if stop==coordinates[coordinate]:
+                                #if - AD, if + AA.
+                                if strand=="-":
+                                    AA_counter, AD_counter=add_to(["AD"], AA_counter, AD_counter)
+                                else:
+                                    AA_counter, AD_counter=add_to(["AA"], AA_counter, AD_counter)
+                            #Or we have both events.
                             else:
-                                add_to(["AA"])
-                        #Or we have both events.
-                        else:
+                                #both
+                                AA_counter, AD_counter=add_to(["AA","AD"], AA_counter, AD_counter)
+                        # if this exon contains a previous exon completely then we have both
+                        elif coordinate > start and coordinates[coordinate] < stop:
                             #both
-                            add_to(["AA","AD"])
-                    # if this exon contains a previous exon completely then we have both
-                    elif coordinate > start and coordinates[coordinate] < stop:
-                        #both
-                        add_to(["AA","AD"])
-                
-                #Add new coordinates to compare new entries to.
-                coord_exons[str(start)+"_"+str(stop)]=entry
-                coordinates[start]=stop
+                            AA_counter, AD_counter=add_to(["AA","AD"], AA_counter, AD_counter)
+                    
+                    #Add new coordinates to compare new entries to.
+                    coord_exons[str(start)+"_"+str(stop)]=entry
+                    coordinates[start]=stop
+                    # Progress bar
+                    c+=1
+                    percentage= round(c/total_exon_count * 100, 2)
+                    print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %", end="\r")
+            #Final bar
+            print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
+            AA_AD_dict=True
 
-        #print(potential_AA)
-        #print(potential_AD)
         # Calculate psi scores for potential AA, if asked for.
         if event=="AA":
+            print("Calculating PSI scores for alternative acceptors: \n", end="\r")
             out=open(args.out+"PSI_AA.tsv", "w")
             out.write("#PSI Table AA \n")
-            out.write("Location\tPosition_Transcript\t"+"\t".join(sample_names)+"\n")
+            out.write("Event_Location\t"+"\t".join(sample_names)+"\n")
+            #Progress
+            counter=0
             for gene in potential_AA:
                 #If there is exons for this gene:
                 if len(potential_AA[gene])!=0:
                     #Extrat strand information for header (for each gene)
-                    strand=potential_AA[gene][0][3]
+                    strand=gene_ranges[gene][1]
                 
                     #Create gene header
                     out.write("#"+gene+", "+strand+"\n")
-                    #sort after exon start coordinate
-                    potential_AA[gene].sort(key=lambda x: int(x[1]))
-                for exon in potential_AA[gene]:
-                    PSI_scores=[]
-                    for sample in sample_names:
-                        PSI_scores.append(PSI_AA(sample, exon))
-                
-                    out.write("_".join(exon[0:3])+"\t"+exon[4]+"\t"+ "\t".join(PSI_scores)+"\n")
+                    #sort events
+                    for event in potential_AA[gene]:
+                        event.sort()
+                    potential_AA[gene].sort(key=lambda x: int(x[0]))
+                    
+                    #numerate events
+                    event_ID=0
+                    for event in potential_AA[gene]:
+                        counter+=1
+                        event_ID+=1
+                        for starts in event:
+                            PSI_scores=[]
+                            for sample in sample_names:
+                                PSI_scores.append(PSI_AA(gene, sample, event, starts))
+                    
+                            out.write(str(event_ID)+"_"+str(starts)+"\t"+ "\t".join(PSI_scores)+"\n")
+                        #Progress update
+                        percentage= round(counter/AA_counter *100, 2)
+                        print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %", end="\r")
+            
+            if AA_counter!=0:
+                print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
+            else:
+                print("No Alternative Acceptor events found! \n")
             out.close()
+            
+            print("Printing alternative acceptor coordinates into .bed file...", end="\r")
+            "Print .bed file, can be removed later."
+            out=open(args.out+"AA.bed", "w")
+            for gene in potential_AA:
+                if len(potential_AA[gene])!=0:
+                    #Extrat strand information for header (for each gene)
+                    strand=gene_ranges[gene][1]
+                    chrom=gene_ranges[gene][0]
+                
+                for entry in potential_AA[gene]:
+                    smallest_start=min(entry)
+                    biggest_start=max(entry)
+                    name="AA_"+chrom+"_"+str(smallest_start)+"_"+str(biggest_start)
+                    out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, str(smallest_start), str(biggest_start), name, strand))
+            out.close()
+            print("Printing alternative acceptor coordinates into .bed file: Done! \n", end="\r")
+
         else:
+            print("Calculating PSI scores for Alternative Donors: \n", end="\r")
             out=open(args.out+"PSI_AD.tsv", "w")
             out.write("#PSI Table AD \n")
-            out.write("Location\tPosition_Transcript\t"+"\t".join(sample_names)+"\n")
+            out.write("Event_Location"+"\t".join(sample_names)+"\n")
+            #Progress
+            counter=0
             for gene in potential_AD:
                 #If there is exons for this gene:
                 if len(potential_AD[gene])!=0:
                     #Extrat strand information for header (for each gene)
-                    strand=potential_AD[gene][0][3]
+                    strand=gene_ranges[gene][1]
                 
                     #Create gene header
                     out.write("#"+gene+", "+strand+"\n")
-                    #sort after exon stop coordinate
-                    potential_AD[gene].sort(key=lambda x: int(x[2]))
-                for exon in potential_AD[gene]:
-                    PSI_scores=[]
-                    for sample in sample_names:
-                        PSI_scores.append(PSI_AD(sample, exon))
-                
-                    out.write("_".join(exon[0:3])+"\t"+exon[4]+"\t"+ "\t".join(PSI_scores)+"\n")
+                    #sort events
+                    for event in potential_AD[gene]:
+                        event.sort()
+                    potential_AD[gene].sort(key=lambda x: int(x[0]))
+                    
+                    #numerate events
+                    event_ID=0
+                    for event in potential_AD[gene]:
+                        counter+=1
+                        event_ID+=1
+                        for stops in event:
+                            PSI_scores=[]
+                            for sample in sample_names:
+                                PSI_scores.append(PSI_AD(gene, sample, event, stops))
+                    
+                            out.write(str(event_ID)+"_"+str(stops)+"\t"+ "\t".join(PSI_scores)+"\n")
+                        #Progress update
+                        percentage= round(counter/AD_counter *100, 2)
+                        print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %", end="\r")
+            
+            if AD_counter!=0:
+                print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")  
+            else:
+                print("No Alternative Donor events found! \n")
             out.close()
+
+            print("Printing alternative donor coordinates into .bed file ...", end="\r")
+            "Print .bed file, can be removed later."
+            out=open(args.out+"AD.bed", "w")
+            for gene in potential_AD:
+                if len(potential_AD[gene])!=0:
+                    #Extrat strand information for header (for each gene)
+                    strand=gene_ranges[gene][1]
+                    chrom=gene_ranges[gene][0]
+                
+                for entry in potential_AD[gene]:
+                    smallest_stop=min(entry)
+                    biggest_stop=max(entry)
+                    name="AD_"+chrom+"_"+str(smallest_stop)+"_"+str(biggest_stop)
+                    out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, str(smallest_stop), str(biggest_stop), name, strand))
+            out.close()
+            print("Printing alternative donor coordinates into .bed file: Done! \n", end="\r")
 
     else:
         #Intron Retention, because invalid inputs are checked at the beginning of the script to save time
@@ -709,8 +1168,10 @@ for event in inputs:
         #And check for every gap between exons, if there is read showing intron retention.
         #That means at this point we save all potential gaps.
         #Format: chr_start1_stop1_start2_stop2
-        
+        print("\nFinding potential intron retention events... ", end="\r")
         IR_coord=dict()
+        #IR counter for PSI progress
+        IR_counter=0
         #Remove transcript ids and duplicate exons.
         for gene in gene_dict:
             if gene_dict[gene]:
@@ -719,13 +1180,18 @@ for event in inputs:
                     for i in range(0, len(gene_dict[gene][trans_ID])-1):
                         chrom=gene_dict[gene][trans_ID][i][0]
                         strand=gene_dict[gene][trans_ID][i][3]
-                        IR=strand+"_"+chrom+"_"+"_".join(gene_dict[gene][trans_ID][i][1:3])+"_"+"_".join(gene_dict[gene][trans_ID][i+1][1:3])
+                        IR=strand+"_"+chrom+"_"+gene_dict[gene][trans_ID][i][2]+"_"+gene_dict[gene][trans_ID][i+1][1]
                         if IR not in IR_coord[gene]:                        
                             IR_coord[gene].append(IR)
+                            IR_counter+=1
+        print("Finding potential intron retention events: Done! \n", end="\r")
         
         out=open(args.out+"PSI_IR.tsv", "w")
+        print("Calculating PSI scores for intron retention events \n", end="\r")
         out.write("#PSI Table IR \n")
         out.write("Location\tPosition_Transcript\t"+"\t".join(sample_names)+"\n")
+        #progress counter
+        counter=0
         for gene in IR_coord:
             #If there is exons for this gene:
             if len(IR_coord[gene])!=0:
@@ -742,9 +1208,33 @@ for event in inputs:
                     PSI_scores.append(PSI_IR(sample, exon))
             
                 out.write("_".join(exon.split("_")[1::])+"\t"+ "\t".join(PSI_scores)+"\n")
+                counter+=1
+                percentage=round(counter/IR_counter *100, 2)
+                print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %", end="\r")
+        
+        if IR_counter!=0:
+            print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
+        else:
+            print("No potential IR events found! \n", end="\r")
         out.close()
+        "Print .bed file, can be removed later."
+        print("Printing intron retention coordinates into .bed file ... ", end="\r")
+        out=open(args.out+"IR.bed", "w")
+        for gene in IR_coord:
+            strand=IR_coord[gene][0].split("_")[0]
+            
+            for entry in IR_coord[gene]:
+                chrom = entry.split("_")[1]
+                start=entry.split("_")[2]
+                stop=entry.split("_")[3]
+                name="IR_"+chrom+"_"+start+"_"+stop
+                out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, start, stop, name, strand))
+        out.close()
+        print("Printing intron retention coordinates into .bed file: Done! \n", end="\r")
 
+#%% End time
 
+print("Run time: {:.2f} seconds.".format(time.time()-start_time))  
 
 
 
