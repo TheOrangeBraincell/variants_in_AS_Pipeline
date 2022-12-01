@@ -250,7 +250,7 @@ def PSI_CE(sample, CE, gene):
     chrom=CE[0]
     start=int(CE[1])
     stop=int(CE[2])
-    strand=CE[3]
+    strand=CE[3]                                                                        
     #print(start, stop)
     
     #Find .bam file corresponding to sample name.
@@ -500,6 +500,7 @@ def PSI_AA(gene, sample, event, start):
     for i in range(0, len(event)-1):
         start1=int(event[i])
         start2=int(event[i+1])
+        length=max(start1, start2)-min(start1, start2)
         difference_reads=samfile.fetch(chrom, start1, start2)
         counter=0
         
@@ -536,7 +537,8 @@ def PSI_AA(gene, sample, event, start):
             #Filter conditions passed:
             counter+=1
         #Add difference reads into list
-        difference_counters.append(counter)
+        difference_counters.append(round(counter/length,2))
+        
     
     #Note that the first start, on the minus strand, has the highest coordinate.
     start_number=event.index(start)
@@ -671,6 +673,7 @@ def PSI_AD(gene, sample, exon, stop):
     for i in range(0, len(event)-1):
         stop1=int(event[i])
         stop2=int(event[i+1])
+        length=max(stop1,stop2)-min(stop1,stop2)
         difference_reads=samfile.fetch(chrom, stop1, stop2)
         counter=0
         
@@ -707,7 +710,7 @@ def PSI_AD(gene, sample, exon, stop):
             #Filter conditions passed:
             counter+=1
         #Add difference reads into list
-        difference_counters.append(counter)
+        difference_counters.append(round(counter/length,2))
     
     #Note that the first start, on the minus strand, has the highest coordinate.
     stop_number=event.index(stop)
@@ -734,16 +737,15 @@ def PSI_AD(gene, sample, exon, stop):
     
     return "NAN"
 
-def PSI_IR(sample, exon):
+def PSI_IR(sample, entry):
     """
-    
 
     Parameters
     ----------
     sample : string
         Sample name
-    exon : list
-        contains chromosome, start, stop, strand information.
+    entry: string separated by _
+        contains strand, chromosome, exon1stop, exon2start
 
     Returns
     -------
@@ -751,8 +753,183 @@ def PSI_IR(sample, exon):
         PSI score
 
     """
+    strand, chrom, exon1stop, exon2start=entry.split("_")
+    exon1stop=int(exon1stop)
+    exon2start=int(exon2start)
+    #Find .bam file corresponding to sample name.
+    for file in bam_file_list:
+        if sample in file:
+            bam_file=file
+            index_file=file[0:-1]+"i"
+            break
     
-    return "NAN"
+    #Initialize opening of file
+    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
+    
+    #Get Overlapping Reads
+    #Fetch reads in gene
+    reads_genome=samfile.fetch(chrom,gene_ranges[gene][2], gene_ranges[gene][3])
+    read_dict=dict()
+    overlap_counter=0
+    
+    for read in reads_genome:
+        #Filter. First exclude non-primary alignments
+        if read.is_secondary:
+            continue
+        #no spliced reads
+        if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        
+        #Exclude second read of pair if they map to the same region.
+        read_name=read.query_name
+        read_start=int(read.reference_start)
+        read_length=int(read.infer_query_length())
+        if read_name in read_dict:
+            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                continue
+        else:
+            read_dict[read_name]=[read_start, read_start+read_length] 
+            
+        #Get strand information, exclude reads on wrong strand
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=strand:
+            continue
+        
+        #check coordinates, if they overlap the exon1end or the exon2start, it could be an overlap read.
+        parts=re.search(r'((?:\d+[I,D,S,H])?)((?:\d+M)*)((?:\d+[I,D,S,H])?)((?:\d+M)?)((?:\d+[I,D,S,H])?)',read.cigarstring)
+        #5 groups: first one before match, second match, third one in between matches, fourth one match, 5th following match.
+        match_length=0
+        after_match=0
+        before_match=0
+        read_stop=read_start+read_length
+        #remove unaligned parts before match
+        if parts.group(1):
+            before_match=int(re.sub('[IDSH]', '', parts.group(1)))
+        read_start=read_start+before_match
+        
+        #match group
+        if parts.group(2):
+            #add to match length
+            match_length+=int(parts.group(2).strip("M"))
+        
+        #Potential part between matches:
+        if parts.group(3):
+            #Is last group if there is only one M, and middle if theres 2.
+            if parts.group(4):
+                #Different behavior for S, D, and I
+                if re.search(r'[SI]', parts.group(3)):
+                    #add to match length
+                    match_length+=int(re.sub('[IDSH]', '', parts.group(3)))
+                    #D does not get added, as it shortens the query.
+            else:
+                after_match=int(re.sub('[IDSH]', '', parts.group(3)))
+        
+        #Potential second match group
+        if parts.group(4):
+            #Add to match length
+            match_length+=int(parts.group(4).strip("M"))
+        
+        #remove unaligned parts after match
+        if parts.group(5):
+            after_match=int(re.sub('[IDSH]', '', parts.group(5)))
+        read_stop=read_stop-after_match
+        
+        #matching parts coordinates
+        if read_stop-read_start!=match_length:
+            print("Error calculating: ",read_stop-read_start, match_length, read.cigarstring)
+            print(parts.group(1),parts.group(2),parts.group(3),parts.group(4),parts.group(5))
+            quit()
+        #Find the overlapping ones left side
+        if read_start<=exon1stop and read_stop>exon1stop:
+            overlap_counter+=1
+        #right side
+        elif read_start<exon2start and read_stop>=exon1stop:
+            overlap_counter+=1
+        
+        "Here needs to go extra read filtering, i.e. AD/AA events or location of pair."
+    
+    #Get Spliced Reads
+    #Open bam file in gene range.
+    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][2], gene_ranges[gene][3])
+    
+    #Go through reads
+    read_dict=dict()
+    spliced_counter=0
+    for read in spliced_reads:
+        #only spliced reads
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        #exclude second read of pair, if maps to overlapping region.
+        read_name=read.query_name
+        read_start=int(read.reference_start)
+        read_length=int(read.infer_query_length())
+        if read_name in read_dict:
+            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                continue
+        else:
+            read_dict[read_name]=[read_start, read_start+read_length] 
+        
+        "Get strand information, exclude reads on wrong strand"
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=strand:
+            continue
+        
+        #Allow for several splice junctions in one read.
+        current_cigar = read.cigarstring
+        current_start = int(read_start)
+        
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            exon1 = int(junction.group(1))
+            intron = int(junction.group(2))
+            exon2 = int(junction.group(3))
+            exon1_start = current_start
+            exon1_end = exon1_start+exon1+1  #exclusive
+            exon2_start = exon1_end+intron -1 #inclusive
+                
+            #skip alignments with less than 3 matching bases in an exon.
+            if exon1<3 or exon2<3:
+                # update cigar string
+                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+                current_start= exon2_start
+                continue
+            
+            if exon1_end<=exon1stop and exon2_start>=exon2start:
+                spliced_counter+=1
+            
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= exon2_start
+    
+    print(overlap_counter, spliced_counter)
+    #Calculate PSI
+    IR=overlap_counter
+    ER=overlap_counter+spliced_counter
+    if IR+ER==0:
+        PSI="NAN"
+    else:
+        PSI=str(round(IR/(IR+ER),2))
+    
+    return PSI
 
 #%% 1. Process Database input
 
