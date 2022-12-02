@@ -175,12 +175,12 @@ def add_to(events, AA_counter, AD_counter):
             #We want to save the actual exon starts (not just smaller coordinate.)
             strand=entry[3]
             if strand=="+":
-                start1=entry[1]
-                start2=coord_exons[key_string][1]
+                start1=int(entry[1])
+                start2=int(coord_exons[key_string][1])
             
             else:
-                start1=entry[2]
-                start2=coord_exons[key_string][2]
+                start1=int(entry[2])
+                start2=int(coord_exons[key_string][2])
             #Go through previous entries in potential_AA to make sure theres no duplicates.
             event_exists=False
             for events in potential_AA[gene]:
@@ -193,7 +193,7 @@ def add_to(events, AA_counter, AD_counter):
             
             #If the event is not found, make a new one.
             if event_exists==False:
-                potential_AA[gene].append([start1, start2])
+                potential_AA[gene].append([int(start1), int(start2)])
                 AA_counter+=1
         
             
@@ -204,12 +204,12 @@ def add_to(events, AA_counter, AD_counter):
             #save exon stops (actual, not just bigger coordinate)
             strand=entry[3]
             if strand=="+":
-                stop1=entry[2]
-                stop2=coord_exons[key_string][2]
+                stop1=int(entry[2])
+                stop2=int(coord_exons[key_string][2])
             
             else:
-                stop1=entry[1]
-                stop2=coord_exons[key_string][1]
+                stop1=int(entry[1])
+                stop2=int(coord_exons[key_string][1])
             #Go through previous entries in potential_AA to make sure theres no duplicates.
             event_exists=False
             for events in potential_AD[gene]:
@@ -383,7 +383,7 @@ def PSI_CE(sample, CE, gene):
     
     IR= counter_left+counter_right+C
     ER= counter_accross
-    if ER+ IR !=0:
+    if ER+ IR >10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
@@ -555,7 +555,7 @@ def PSI_AA(gene, sample, event, start):
         IR=spliced_counters[start_number]
         ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
     
-    if ER+ IR !=0:
+    if ER+ IR >10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
@@ -727,7 +727,7 @@ def PSI_AD(gene, sample, exon, stop):
         IR=spliced_counters[stop_number]
         ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
     
-    if ER+ IR !=0:
+    if IR+ER>10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
@@ -737,7 +737,7 @@ def PSI_AD(gene, sample, exon, stop):
     
     return "NAN"
 
-def PSI_IR(sample, entry):
+def PSI_IR(sample, entry, gene):
     """
 
     Parameters
@@ -848,14 +848,34 @@ def PSI_IR(sample, entry):
             print("Error calculating: ",read_stop-read_start, match_length, read.cigarstring)
             print(parts.group(1),parts.group(2),parts.group(3),parts.group(4),parts.group(5))
             quit()
+        
+        pass_on_read=False
+        #Filter out reads that are within AD/AA events
+        for event in potential_AA[gene]:
+            if strand=="+":
+                if read_start>=min(event):
+                    pass_on_read=True
+            if strand=="-":
+                if read_stop<=max(event):
+                    pass_on_read=True
+        for event in potential_AD[gene]:
+            if strand=="+":
+                if read_stop<=max(event):
+                    pass_on_read=True
+            if strand=="-":
+                if read_start>=min(event):
+                    pass_on_read=True
+        if pass_on_read==True:
+            continue
+        
+        #Filter out reads that do not have their pair within an intron
+        
         #Find the overlapping ones left side
         if read_start<=exon1stop and read_stop>exon1stop:
             overlap_counter+=1
         #right side
         elif read_start<exon2start and read_stop>=exon1stop:
             overlap_counter+=1
-        
-        "Here needs to go extra read filtering, i.e. AD/AA events or location of pair."
     
     #Get Spliced Reads
     #Open bam file in gene range.
@@ -913,18 +933,23 @@ def PSI_IR(sample, entry):
                 current_start= exon2_start
                 continue
             
-            if exon1_end<=exon1stop and exon2_start>=exon2start:
-                spliced_counter+=1
+            if strand=="+":
+                if exon1_end-1<=exon1stop and exon2_start>=exon2start:
+                    spliced_counter+=1
+            
+            else:
+                if exon1_end<=exon1stop and exon2_start>=exon2start:
+                    spliced_counter+=1
             
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
-    
-    print(overlap_counter, spliced_counter)
+    if sample=="S000001":
+        print(entry, overlap_counter, spliced_counter)
     #Calculate PSI
     IR=overlap_counter
     ER=overlap_counter+spliced_counter
-    if IR+ER==0:
+    if IR+ER<=10:
         PSI="NAN"
     else:
         PSI=str(round(IR/(IR+ER),2))
@@ -1129,7 +1154,7 @@ for event in inputs:
         print("Writing Casette Exon coordinates into .bed file: Done! \n", end="\r")
     
     #"Alternative Donors/Acceptors"
-    elif event.upper()=="AD" or event.upper()=="AA":
+    elif event.upper()=="AD" or event.upper()=="AA" or event.upper()=="IR":
         if AA_AD_dict ==False:
             print("\nFinding Alternative Donors/Acceptors: \n", end="\r")
             #Creates dictionary with exons per gene.
@@ -1281,7 +1306,7 @@ for event in inputs:
             out.close()
             print("Printing alternative acceptor coordinates into .bed file: Done! \n", end="\r")
 
-        else:
+        elif event=="AD":
             print("Calculating PSI scores for Alternative Donors: \n", end="\r")
             out=open(args.out+"PSI_AD.tsv", "w")
             out.write("#PSI Table AD \n")
@@ -1339,75 +1364,75 @@ for event in inputs:
             out.close()
             print("Printing alternative donor coordinates into .bed file: Done! \n", end="\r")
 
-    else:
-        #Intron Retention, because invalid inputs are checked at the beginning of the script to save time
-        #Retention of introns is usually not annotated. So we do the same as for CE.
-        #And check for every gap between exons, if there is read showing intron retention.
-        #That means at this point we save all potential gaps.
-        #Format: chr_start1_stop1_start2_stop2
-        print("\nFinding potential intron retention events... ", end="\r")
-        IR_coord=dict()
-        #IR counter for PSI progress
-        IR_counter=0
-        #Remove transcript ids and duplicate exons.
-        for gene in gene_dict:
-            if gene_dict[gene]:
-                IR_coord[gene]=[]
-                for trans_ID in gene_dict[gene]:
-                    for i in range(0, len(gene_dict[gene][trans_ID])-1):
-                        chrom=gene_dict[gene][trans_ID][i][0]
-                        strand=gene_dict[gene][trans_ID][i][3]
-                        IR=strand+"_"+chrom+"_"+gene_dict[gene][trans_ID][i][2]+"_"+gene_dict[gene][trans_ID][i+1][1]
-                        if IR not in IR_coord[gene]:                        
-                            IR_coord[gene].append(IR)
-                            IR_counter+=1
-        print("Finding potential intron retention events: Done! \n", end="\r")
-        
-        out=open(args.out+"PSI_IR.tsv", "w")
-        print("Calculating PSI scores for intron retention events \n", end="\r")
-        out.write("#PSI Table IR \n")
-        out.write("Location\tPosition_Transcript\t"+"\t".join(sample_names)+"\n")
-        #progress counter
-        counter=0
-        for gene in IR_coord:
-            #If there is exons for this gene:
-            if len(IR_coord[gene])!=0:
-                #Extrat strand information for header (for each gene)
-                strand=IR_coord[gene][0].split("_")[0]
-            
-                #Create gene header
-                out.write("#"+gene+", "+strand+"\n")
-                #sort by first exons start.
-                IR_coord[gene].sort(key=lambda x: int(x.split("_")[2]))
-            for exon in IR_coord[gene]:
-                PSI_scores=[]
-                for sample in sample_names:
-                    PSI_scores.append(PSI_IR(sample, exon))
-            
-                out.write("_".join(exon.split("_")[1::])+"\t"+ "\t".join(PSI_scores)+"\n")
-                counter+=1
-                percentage=round(counter/IR_counter *100, 2)
-                print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %", end="\r")
-        
-        if IR_counter!=0:
-            print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
         else:
-            print("No potential IR events found! \n", end="\r")
-        out.close()
-        "Print .bed file, can be removed later."
-        print("Printing intron retention coordinates into .bed file ... ", end="\r")
-        out=open(args.out+"IR.bed", "w")
-        for gene in IR_coord:
-            strand=IR_coord[gene][0].split("_")[0]
+            #Intron Retention, because invalid inputs are checked at the beginning of the script to save time
+            #Retention of introns is usually not annotated. So we do the same as for CE.
+            #And check for every gap between exons, if there is read showing intron retention.
+            #That means at this point we save all potential gaps.
+            #Format: chr_start1_stop1_start2_stop2
+            print("\nFinding potential intron retention events... ", end="\r")
+            IR_coord=dict()
+            #IR counter for PSI progress
+            IR_counter=0
+            #Remove transcript ids and duplicate exons.
+            for gene in gene_dict:
+                if gene_dict[gene]:
+                    IR_coord[gene]=[]
+                    for trans_ID in gene_dict[gene]:
+                        for i in range(0, len(gene_dict[gene][trans_ID])-1):
+                            chrom=gene_dict[gene][trans_ID][i][0]
+                            strand=gene_dict[gene][trans_ID][i][3]
+                            IR=strand+"_"+chrom+"_"+gene_dict[gene][trans_ID][i][2]+"_"+gene_dict[gene][trans_ID][i+1][1]
+                            if IR not in IR_coord[gene]:                        
+                                IR_coord[gene].append(IR)
+                                IR_counter+=1
+            print("Finding potential intron retention events: Done! \n", end="\r")
             
-            for entry in IR_coord[gene]:
-                chrom = entry.split("_")[1]
-                start=entry.split("_")[2]
-                stop=entry.split("_")[3]
-                name="IR_"+chrom+"_"+start+"_"+stop
-                out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, start, stop, name, strand))
-        out.close()
-        print("Printing intron retention coordinates into .bed file: Done! \n", end="\r")
+            out=open(args.out+"PSI_IR.tsv", "w")
+            print("Calculating PSI scores for intron retention events \n", end="\r")
+            out.write("#PSI Table IR \n")
+            out.write("Location\tPosition_Transcript\t"+"\t".join(sample_names)+"\n")
+            #progress counter
+            counter=0
+            for gene in IR_coord:
+                #If there is exons for this gene:
+                if len(IR_coord[gene])!=0:
+                    #Extrat strand information for header (for each gene)
+                    strand=IR_coord[gene][0].split("_")[0]
+                
+                    #Create gene header
+                    out.write("#"+gene+", "+strand+"\n")
+                    #sort by first exons start.
+                    IR_coord[gene].sort(key=lambda x: int(x.split("_")[2]))
+                for exon in IR_coord[gene]:
+                    PSI_scores=[]
+                    for sample in sample_names:
+                        PSI_scores.append(PSI_IR(sample, exon, gene))
+                
+                    out.write("_".join(exon.split("_")[1::])+"\t"+ "\t".join(PSI_scores)+"\n")
+                    counter+=1
+                    percentage=round(counter/IR_counter *100, 2)
+                    print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %", end="\r")
+            
+            if IR_counter!=0:
+                print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
+            else:
+                print("No potential IR events found! \n", end="\r")
+            out.close()
+            "Print .bed file, can be removed later."
+            print("Printing intron retention coordinates into .bed file ... ", end="\r")
+            out=open(args.out+"IR.bed", "w")
+            for gene in IR_coord:
+                strand=IR_coord[gene][0].split("_")[0]
+                
+                for entry in IR_coord[gene]:
+                    chrom = entry.split("_")[1]
+                    start=entry.split("_")[2]
+                    stop=entry.split("_")[3]
+                    name="IR_"+chrom+"_"+start+"_"+stop
+                    out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, start, stop, name, strand))
+            out.close()
+            print("Printing intron retention coordinates into .bed file: Done! \n", end="\r")
 
 #%% End time
 
