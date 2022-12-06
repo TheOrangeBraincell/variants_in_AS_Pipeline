@@ -1,0 +1,547 @@
+# -*- coding: utf-8 -*-
+"""
+date: 09-09-22
+title: Variants_AS.py
+author: Mirjam Karlsson-Müller
+
+Description:
+    For each sample picks vcf containing the most variants and selects corresponding
+    bam and gene.tsv files.
+    
+    The variants in the vcf files are filtered, and for those passing 
+    the genotypes are extracted. If a variant does not pass filtering, it is
+    saved as NEDA. For samples where the genotype at a given location is 
+    unclear, gene expression data is used to predict genotype HMZR or NOEX.
+    
+    From GENCODE and RefSeq annotated exons are extracted and potential 
+    AS events identified. For those events, PSI scores are calculated based
+    on the alignment files for each sample.
+    
+Abbreviations:
+    HMZA=   Genotype Homozygous Alternative Allele
+    HETZ=   Heterozygous
+    HMZR=   Homozygous Reference Allele
+    NEDA=   Not enough data to be sure. Means there is evidence of variants, or
+            alternative genotypes, but they got filtered out.
+    NOEX=   no expression at this point.
+
+
+Inputs:
+    - Sample Folder
+    - Database files for GENCODE and RefSeq respectively
+    - output folder, where output files are stored
+    - evtl. coordinates or name of a gene/region of interest
+    - What type of alternative splicing event?
+
+Instructions:
+    Run in command line.
+    
+    #with coordinates f.e. Estrogen Receptor
+    python Variants_AS.py -s ../Sample_Data/ -o ./Variants_AS_out/ -c "chr6:151690496-152103274" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE
+    
+    #for server
+    python Variants_AS.py -s /raidset/mi3258mu-se/Mirjam -o./Variants_AS_out_ESR1/ -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE -c "chr6:151690496-152103274"
+    
+    #or name f.e. Estrogen Receptor
+    
+
+    #no coordinates/name
+
+
+Possible Bugs:
+    - Different sample folder structure would be a problem.
+    
+
+"""
+
+
+#%% Imports
+
+import argparse
+import glob
+import re
+import gzip
+import time
+import os
+
+#%% Time
+
+start_time=time.time()
+
+#%% 0. argparse
+
+"0. Setting up argparse, handling input parameters"
+
+parser = argparse.ArgumentParser(prog='VCF Parser',
+                                 usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
+                                     [-c] "chrX:XXXXXX-XXXXXX"',
+                                 description="""Creates a genotype table out of
+                                 several samples. Containing location x sample.""")
+
+parser.add_argument('--samples', '-s', required=True,
+                    help='folder containing sample folders containing among \
+                        others, the vcf, bam and gene.tsv files.')
+parser.add_argument('--out', '-o', required=True,
+                    help="""Output folder, containing genotype and Psi tables.""")
+parser.add_argument('--coordinates', '-c', type=str,
+                    help="""Start and stop coordinates of region of interest,
+                    as well as chromosome. Format: chr[]:start-stop""")
+parser.add_argument('--gencode', '-g', required=True,
+                    help="""tsv file containing bed file information on 
+                    annotated exons from GENCODE39 as well as gene names.""")
+parser.add_argument('--refseq', '-r', required=True,
+                    help="""tsv file containing bed file information on 
+                    annotated exons from RefSeq as well as gene names.""")
+parser.add_argument('--name', '-n', type=str,
+                    help="""Symbol of gene of interest. f.e. ESR1. 
+                    (Symbol by HUGO Gene Nomenclature Committee).""")
+parser.add_argument('--AS', '-as', type=str, required=True,
+                    help="""Which type of alternative splicing event we are
+                    interested in. "CE" for Casette Exons, "AA" for alternative
+                    acceptors, "AD" for alternative donors, "IR" for intron
+                    retention and "ALL" for all of the types. Several seperated
+                    by ,.""")
+
+
+args = parser.parse_args()
+
+# Extract input coordinates, check their format.
+if args.coordinates:
+    if re.search(r'[a-z]{3}[MXY]?\d*:\d+-\d+', args.coordinates):
+        coord = re.search(r'([a-z]{3}[MXY]?\d*):(\d+)-(\d+)', args.coordinates)
+        coord_chrom = coord.group(1)
+        coord_start = int(coord.group(2))
+        coord_stop = int(coord.group(3))
+
+    else:
+        raise argparse.ArgumentTypeError("""The given coordinates are in the 
+                                         wrong format. Input as 
+                                         chrX:XXXX-XXXX.""")
+        quit()
+
+
+if args.AS:
+    allowed_inputs=["CE", "AA", "AD", "IR", "ALL"]
+    inputs=args.AS.split(",")
+    for i in inputs:
+        if i.upper() not in allowed_inputs:
+            raise argparse.ArgumentTypeError("""The allowed abbreviations for
+                                             splicing events are "CE" for 
+                                             Casette Exons, "AA" for 
+                                             alternative
+                                             acceptors, "AD" for alternative 
+                                             donors, "IR" for intron
+                                             retention and "ALL" for all of 
+                                             the types. Several seperated
+                                             by ,.""")
+            quit()
+
+if args.name and args.coordinates:
+    raise argparse.ArgumentError("""Cannot process input name and coordinates. 
+                                 Please use only one or the other.""")
+    quit()
+
+
+#Create output directory if not there already
+if not os.path.exists(args.out):
+    os.makedirs(args.out)
+
+#%% 1. Processing Database input
+
+#outer dictionary with gene names as key
+gene_dict=dict()
+print("Creating Database Dictionary...", end="\r")
+
+
+for file in [args.gencode, args.refseq]:
+    with open(file, "r") as infile:
+        for line in infile:
+            # To exclude potential title lines/empty lines, formatting mistakes
+            # Only takes chr[] and chr[]_random lines, in accordance with bam.
+            if re.search(r"(.+)\t(?:([a-z]{3}[X,M,Y]?\d*)|([a-z]{3}[X,M,Y]?\d*)"
+                         r".+_random)\t(\-?\+?)\t(\d+)\t(\d+)\t(\d+)\t([\d,]+)"
+                         r"\t([\d,]+)\t(.+)", line):
+                # specify groups.
+                entry = re.search(r"(.+)\t([a-z]{3}[X,M,Y]?\d*).*\t"
+                             r"(\-?\+?)\t(\d+)\t(\d+)\t(\d+)\t([\d,]+)"
+                             r"\t([\d,]+)\t(.+)", line)
+                #Assign variables to groups
+                trans_ID=entry.group(1)
+                chrom=entry.group(2)
+                strand=entry.group(3)
+                
+                """To not get caught in start/stop, -/+ strand complications,
+                coordinates are referred to as bigger and smaller instead."""
+                
+                number_exons=int(entry.group(6))
+                exon_smaller=entry.group(7).split(",")[0:-1]
+                exon_bigger=entry.group(8).split(",")[0:-1]
+                gene_name=entry.group(9)
+                if file==args.gencode:
+                    db="G"
+                elif file==args.refseq:
+                    db="R"
+                else:
+                    db="You got a bug."
+                
+                #If choordinates are given:
+                if args.coordinates:
+                    #exclude entries outside of coordinates
+                    if int(exon_smaller[0])<coord_start or \
+                        int(exon_bigger[-1])>coord_stop or chrom!=coord_chrom:
+                        continue
+                
+                #if name is given:
+                if args.name:
+                    if gene_name!=args.name:
+                        continue
+                
+                #if its a new gene symbol, initialize inner dictionary
+                if gene_name not in list(gene_dict.keys()):
+                    gene_dict[gene_name]={trans_ID:[]}
+                else:
+                    #add transcript ID to gene_dict dictionary
+                    gene_dict[gene_name][trans_ID]=[]
+                
+                #make entries for each exon.
+                for i in range(0, number_exons-1):
+                    gene_dict[gene_name][trans_ID].append([chrom, 
+                                                           exon_smaller[i], 
+                                                           exon_bigger[i], 
+                                                           strand, db])
+
+print("Creating Database Dictionary: Done! \n", end="\r")
+
+
+#%% 2. Determining which version of sample files to use.
+
+"""Find the vcf file with the most variants per sample, choose corresponding
+bam and gene.tsv files """
+
+#Find all the vcf files in the data folder.
+argument_glob=args.samples+"/**/*.vcf.gz"
+vcf_file_list=glob.glob(argument_glob, recursive=True)
+
+#If no vcf files are found, quit the program.
+if len(vcf_file_list)==0:
+    print("""There were no vcf files found in the input folder. Please make 
+          sure to use the right input folder. The vcf files can be in any 
+          subfolder of the input folder.""")
+    quit()
+
+"Just counting, no processing. To avoid redundance."
+most_variants=dict()
+sample_names=[]
+#Progress update
+total_files=len(vcf_file_list)
+current_number_files=0
+percentage=100*(current_number_files/total_files)
+print("Counting variants: {:.2f}%".format(percentage), end="\r")
+for file in vcf_file_list:
+    currently_highest=0
+    vcf = gzip.open(file, "rt")
+    sample_name=re.search(r"/(S\d+)/",file).group(1)
+    if sample_name not in sample_names:    
+        sample_names.append(sample_name)
+        most_variants[sample_name]=""
+    #count lines
+    counter=0
+    for line in vcf:
+        #Skip headers
+        if line.startswith("#"):
+            continue
+        else:
+            counter+=1
+            
+    if counter> currently_highest:
+        currently_highest=counter
+        most_variants[sample_name]=file
+        
+
+    "Progress updates on number of vcf files."
+    current_number_files+=1
+    percentage=100*(current_number_files/total_files)
+    print("Counting variants: {:.2f}%".format(percentage),end="\r")
+        
+      
+print("Counting variants: Done!            \n",end="\r")
+
+sample_names=sorted(sample_names)
+            
+"Extract filepaths of corresponding bam and gene.tsv"
+
+tsv_list=[]
+bam_list=[]
+
+for sample in most_variants:
+    tsv_file="/".join(most_variants[sample].split("/")[0:-2])+"/t/gene.tsv"
+    tsv_list.append(tsv_file)
+    bam_list.append("/".join(most_variants[sample].split("/")[0:-2])+"/alignment.bam")
+    
+    
+#print(tsv_list)
+#print(bam_list)
+
+"성공"
+
+#%% 3. Read in gene_expression files.
+
+
+#progress updates
+total_files=len(tsv_list)
+current_file=0
+percentage=100*current_file/total_files
+print("Reading in gene.tsv: {:.2f}%".format(percentage),end="\r")
+if args.name:
+    gene_found=False
+    starts=[]
+    stops=[]
+
+tsv_info=dict()
+for file in tsv_list:
+    tsv_sample_name=file.split("/")[-5]
+    tsv_info[tsv_sample_name]=[]
+    with open(file, "r") as tsv:
+        for line in tsv:
+            #if line starts with E then its a gene id
+            if line.startswith("E"):
+                chrom=line.split("\t")[2]
+                gene_id=line.split("\t")[1]
+                start=line.split("\t")[4]
+                stop=line.split("\t")[5]
+                fpkm=line.split("\t")[7]
+                
+                tsv_info[tsv_sample_name].append([chrom, start, stop, gene_id, fpkm])
+                if args.name:
+                    if gene_id==args.name.upper():
+                        coord_chrom = chrom
+                        starts.append(start)
+                        stops.append(stop)
+                        gene_found=True
+    current_file+=1
+    percentage=100*current_file/total_files
+    print("Reading in gene.tsv: {:.2f}%".format(percentage),end="\r")
+
+print("Reading in gene.tsv: Done!            \n", end="\r")
+
+if args.name:
+    #Catch error in name, if no match is found in tsv files.
+    if gene_found==False:
+        print("""The given gene symbol can not be found, please doublecheck and make
+              sure there is no spaces between letters.""")
+        quit()
+    
+    if gene_found==True:
+        coord_start=min(starts)
+        coord_stops=max(stops)
+
+
+#%% 4. Read in variants: filter and determine genotype.
+
+genotype_HMZR=dict()
+
+variants=dict()
+#Progress update
+total_files=len(vcf_file_list)
+current_number_files=0
+percentage=100*(current_number_files/total_files)
+print("Filtering vcf {:.2f}%".format(percentage), end="\r")
+for sample_name in sample_names:
+    vcf = gzip.open(most_variants[sample_name], "rt")
+    genotype_HMZR[sample_name]=[]
+    #read through entries
+    for line in vcf:
+        #Skip headers
+        if line.startswith("#"):
+            continue
+        chrom, position, ID, ref, alt, qual, filt, info, form, sample =line.split("\t")
+        genotype=sample.split(":")[-7].strip(" ")
+        
+        #If coordinates or name are given, restrict area of variants.
+        if args.coordinates or args.name:
+            if chrom != coord_chrom:
+                continue
+            else:
+                if int(position)< int(coord_start) or int(position)> int(coord_stop):
+                    continue
+        
+        "Before filtering, add all variants to genotype table."
+        variant_ID=chrom+"_"+position
+        if variant_ID not in variants:
+            variants[variant_ID]=dict()
+            
+        variants[variant_ID][sample_name]=[chrom, position, "ND"]
+        
+        "Now filter the entries."
+        #Keep values with MSI<7
+        if re.search(r"MSI=(\d+);", info):
+            if int(re.search(r"MSI=(\d+);", info).group(1))>=7:
+                continue
+        else:
+            continue
+        
+        #print("line 104")
+        #Keep values with HMPOL<6
+        if re.search(r"HMPOL=(\d+);", info):
+            if int(re.search(r"HMPOL=(\d+);", info).group(1))>=6:
+                continue
+        else:
+            continue
+        
+        #print("line 111")
+        #Keep entries with GC_cont < 78%
+        if re.search(r"GC_CONT=(0\.\d+);", info):
+            if float(re.search(r"GC_CONT=(0\.\d+);", info).group(1))>=0.78:
+                continue
+        else:
+            continue
+        
+        #print("line 118")
+        #Keep variant depth >=5
+        if re.search(r"VD=(\d+);", info):
+            if int(re.search(r"VD=(\d+);", info).group(1))<5:
+                continue
+        else:
+            continue
+        
+        #print("line 125")
+        #Is a flag, so it will only be there if it applies.
+        if re.search(r"low_complexity_region", info):
+            continue
+        
+        #print("line 129")
+        #6th column, filter bad quality reads.
+        if qual=="." or float(qual)<55:
+            continue
+        #print("line 133")
+        
+        if re.search(r"ucsc_rep=([a-z]+);", info):
+            #if re.search(r"ucsc_rep=([a-z]+);", info).group(1)=="segdup":
+            continue
+        
+        if genotype=="0/1" or genotype=="1/0":    
+            variants[variant_ID][sample_name][2]= "0/1"
+        elif genotype=="1/1":
+            variants[variant_ID][sample_name][2]= "1/1"
+        #although it should not happen....  But it clearly is.
+        elif genotype=="0/0":
+            variants[variant_ID][sample_name][2]= "0/0"
+            genotype_HMZR[sample_name].append(variant_ID)
+        else:
+            print("Invalid genotype ", genotype)
+    
+    "Progress updates on number of vcf files."
+    current_number_files+=1
+    percentage=100*(current_number_files/total_files)
+    print("Filtering vcf: {:.2f}%".format(percentage),end="\r")
+        
+        
+print("Filtering vcf: Done!            \n",end="\r")
+
+#%% 5. Complete Genotype table
+
+def HMZR_NOEX(variant_ID, sample):
+    """
+    Assigns a genotype at a specific location for a specific sample, if no
+    variant is found at that location.
+    
+    Genotype HMZR (1/1) is given if the variant lies in a gene, which has fpkm >= 1.
+    
+    Otherwise genotype NE is given.
+
+    Parameters
+    ----------
+    variant_ID= string
+                "chrom_position"
+    sample= string
+            sample name f.e. S00001
+
+    Returns
+    -------
+    genotype
+
+    """
+    genotype="NE"
+    for gene in tsv_info[sample]:
+        chrom, position= variant_ID.split("_")
+        #print(gene)
+        #Find gene that the variant is in
+        if chrom==gene[0]:
+            if int(gene[1])<int(position)<int(gene[2]):
+                #Check FPKM value:
+                if float(gene[4])>=1:
+                    #print(gene[4])
+                    genotype="0/0"
+                    return genotype
+        
+    return genotype
+            
+
+
+counter=0
+percentage=100*counter/len(list(variants.keys()))
+print("Going through variants: {:.2f}%".format(percentage),end="\r")
+#Define output file name
+if args.name:
+    out=args.out+"genotype_table_"+args.name+".txt"
+elif args.coordinates:
+    out=args.out+"genotype_table_"+args.coordinates+".txt"
+else:
+    out=args.out+"genotype_table.txt"
+    
+with open(out, "w") as out:
+    out.write("Location\t"+"\t".join(sample_names)+"\n")
+    for variant in variants:
+        new_line=[variant]
+        #iterating through sorted sample names, to always have same order.
+        for sample in sample_names:
+            if sample in variants[variant]:
+                new_line.append(variants[variant][sample][2])
+            else:
+                #figure out what genotype is. HMZR or NOEX.
+                genotype=HMZR_NOEX(variant, sample)
+                new_line.append(genotype)
+        
+        out.write("\t".join(new_line)+"\n")
+        counter+=1
+        percentage=100*counter/len(list(variants.keys()))
+        print("Going through variants: {:.2f}%".format(percentage),end="\r")
+
+print("Going through variants: Done          \n",end="\r")
+
+
+#%% End time
+
+print("Run time: {:.2f} seconds.".format(time.time()-start_time))      
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

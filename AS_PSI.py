@@ -670,6 +670,7 @@ def PSI_AD(gene, sample, exon, stop):
     
     #Find difference reads
     difference_counters=[]
+    difference_lengths=[]
     for i in range(0, len(event)-1):
         stop1=int(event[i])
         stop2=int(event[i+1])
@@ -710,32 +711,57 @@ def PSI_AD(gene, sample, exon, stop):
             #Filter conditions passed:
             counter+=1
         #Add difference reads into list
-        difference_counters.append(round(counter/length,2))
-    
+        difference_counters.append(counter)
+        difference_lengths.append(length)
+    if sample=="S000003":
+        print(event, difference_counters, spliced_counters)
+        
     #Note that the first start, on the minus strand, has the highest coordinate.
     stop_number=event.index(stop)
     if stop_number!=0 and strand=="+":
-        IR=difference_counters[stop_number-1]+spliced_counters[stop_number]
-        ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        total_reads=difference_counters[stop_number-1]+spliced_counters[stop_number]+sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=difference_counters[stop_number-1]+spliced_counters[stop_number]
+            ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+            
     elif stop_number==0 and strand=="+":
-        IR=spliced_counters[stop_number]
-        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        total_reads=spliced_counters[stop_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=spliced_counters[stop_number]
+            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
     elif stop_number!=(len(event)-1) and strand=="-":
-        IR=difference_counters[stop_number-1]+spliced_counters[stop_number]
-        ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        total_reads=difference_counters[stop_number]+spliced_counters[stop_number]+sum([x for i,x in enumerate(difference_counters) if i!=(stop_number)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=difference_counters[stop_number]+spliced_counters[stop_number]
+            ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
     else:
-        IR=spliced_counters[stop_number]
-        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        total_reads=spliced_counters[stop_number]+ sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=spliced_counters[stop_number]
+            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
     
-    if IR+ER>10:
+    if sample=="S000003" and total_reads>10:
+        print(IR, ER)
+    if total_reads>10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
-        
+    if sample=="S000003":
+        print(PSI)
     return PSI
     
-    
-    return "NAN"
 
 def PSI_IR(sample, entry, gene):
     """
@@ -944,8 +970,8 @@ def PSI_IR(sample, entry, gene):
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
-    if sample=="S000001":
-        print(entry, overlap_counter, spliced_counter)
+    #if sample=="S000001":
+    #    print(entry, overlap_counter, spliced_counter)
     #Calculate PSI
     IR=overlap_counter
     ER=overlap_counter+spliced_counter
