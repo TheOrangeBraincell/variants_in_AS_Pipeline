@@ -38,10 +38,10 @@ Useage:
         Run in command line.
         
         #with coordinates f.e. Estrogen Receptor
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
+        python variants_in_AS_Pipeline/AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968"
         
         #With coordinates f.e. BRCA1 (neg strand)
-        python AS_PSI.py -s ../Sample_Data/ -o PSI_BRCA1/ -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
+        python variants_in_AS_Pipeline/AS_PSI.py -s ../Sample_Data/ -o PSI_BRCA1/ -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968"
         
         
         #for server
@@ -61,6 +61,7 @@ import re
 import time
 import pysam
 import os
+import math
 
 #%% Time
 
@@ -99,6 +100,9 @@ parser.add_argument('--AS', '-as', type=str, required=True,
                     acceptors, "AD" for alternative donors, "IR" for intron
                     retention and "ALL" for all of the types. Several seperated
                     by ,.""")
+parser.add_argument('--InsertSize', '-is', type=str,
+                    help="""Average Insert size plus standard deviation. Format
+                    'Mean X Standard Deviation Y' """)
 
 
 args = parser.parse_args()
@@ -138,6 +142,17 @@ if args.AS:
     #If input is all events, make sure the code runs through all:
     if inputs[0].upper()=="ALL":
         inputs=["CE", "AA", "AD", "IR"]
+
+#If we need to calculate scores for intron retention, we require an average insert size between the reads.
+if "IR" in inputs:
+    try:
+        insert_mean=float(args.InsertSize.split(" ")[1])
+        insert_sd=float(args.InsertSize.split(" ")[4].strip("\n"))
+    except:
+        raise argparse.ArgumentTypeError("""Insert Sizes are either missing or
+                                         of wrong format. Required format is:
+                                             'Mean [float] Standard Deviation [float]'""")
+
 if args.name and args.coordinates:
     raise argparse.ArgumentError("""Cannot process input name and coordinates. 
                                  Please use only one or the other.""")
@@ -713,8 +728,8 @@ def PSI_AD(gene, sample, exon, stop):
         #Add difference reads into list
         difference_counters.append(counter)
         difference_lengths.append(length)
-    if sample=="S000003":
-        print(event, difference_counters, spliced_counters)
+    #if sample=="S000003":
+    #    print(event, difference_counters, spliced_counters)
         
     #Note that the first start, on the minus strand, has the highest coordinate.
     stop_number=event.index(stop)
@@ -752,14 +767,14 @@ def PSI_AD(gene, sample, exon, stop):
             IR=spliced_counters[stop_number]
             ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
     
-    if sample=="S000003" and total_reads>10:
-        print(IR, ER)
+    #if sample=="S000003" and total_reads>10:
+    #    print(IR, ER)
     if total_reads>10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
-    if sample=="S000003":
-        print(PSI)
+    #if sample=="S000003":
+    #    print(PSI)
     return PSI
     
 
@@ -789,6 +804,9 @@ def PSI_IR(sample, entry, gene):
             index_file=file[0:-1]+"i"
             break
     
+    #Insert read confidence interval
+    insert_confidence=[insert_mean-1.96*(insert_sd/math.sqrt(len(sample_names))),insert_mean+1.96*(insert_sd/math.sqrt(len(sample_names)))]
+    
     #Initialize opening of file
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
     
@@ -797,13 +815,17 @@ def PSI_IR(sample, entry, gene):
     reads_genome=samfile.fetch(chrom,gene_ranges[gene][2], gene_ranges[gene][3])
     read_dict=dict()
     overlap_counter=0
-    
+
     for read in reads_genome:
         #Filter. First exclude non-primary alignments
         if read.is_secondary:
             continue
         #no spliced reads
         if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        
+        #if distance between reads too far, then this is a sign that the second read is in an exon and in between is a break. So no IR.
+        if read.tlen>insert_confidence[1]:
             continue
         
         #Exclude second read of pair if they map to the same region.
@@ -979,7 +1001,7 @@ def PSI_IR(sample, entry, gene):
         PSI="NAN"
     else:
         PSI=str(round(IR/(IR+ER),2))
-    
+
     return PSI
 
 #%% 1. Process Database input
