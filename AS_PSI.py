@@ -916,14 +916,21 @@ def PSI_IR(sample, entry, gene):
         if pass_on_read==True:
             continue
         
-        #Filter out reads that do not have their pair within an intron
-        
+
         #Find the overlapping ones left side
         if read_start<=exon1stop and read_stop>exon1stop:
             overlap_counter+=1
+            # if entry=="+_chr6_151944508_152060990" and sample=="S000001":
+            #     print(exon1stop, exon2start)
+            #     print(read_start, read_stop)
+            #     print("left")
         #right side
-        elif read_start<exon2start and read_stop>=exon1stop:
+        elif read_start<exon2start and read_stop>=exon2start:
             overlap_counter+=1
+            # if entry=="+_chr6_151944508_152060990" and sample=="S000001":
+            #     print(exon1stop, exon2start)
+            #     print(read_start, read_stop)
+            #     print("right")
     
     #Get Spliced Reads
     #Open bam file in gene range.
@@ -982,7 +989,7 @@ def PSI_IR(sample, entry, gene):
                 continue
             
             if strand=="+":
-                if exon1_end-1<=exon1stop and exon2_start>=exon2start:
+                if exon1_end<=exon1stop and exon2_start>=exon2start:
                     spliced_counter+=1
             
             else:
@@ -996,11 +1003,13 @@ def PSI_IR(sample, entry, gene):
     #    print(entry, overlap_counter, spliced_counter)
     #Calculate PSI
     IR=overlap_counter
-    ER=overlap_counter+spliced_counter
+    ER=spliced_counter
     if IR+ER<=10:
         PSI="NAN"
     else:
         PSI=str(round(IR/(IR+ER),2))
+        # if entry=="+_chr6_151944508_152060990" and sample=="S000001":
+        #     print(overlap_counter, spliced_counter)
 
     return PSI
 
