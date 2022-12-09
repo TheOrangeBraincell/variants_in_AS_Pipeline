@@ -808,8 +808,8 @@ def PSI_IR(sample, entry, gene):
                 spliced_flag=PSI_CE_dict[gene][entry][sample][1]
                 
                 #If this PSI=1 and spliced_flag=True, then theres no evidence for intron retention
-                if CE_PSI==1 and spliced_flag==True:
-                    print("It happend for "+ sample+ " CE coordinates: "+ str(CE_start)+", "+ str(CE_stop)+"IR coordinates: "+ str(exon1stop)+", "+ str(exon2start))
+                if CE_PSI=="1.0" and spliced_flag==True:
+                    #print("It happend for "+ sample+ " CE coordinates: "+ str(CE_start)+", "+ str(CE_stop)+" IR coordinates: "+ str(exon1stop)+", "+ str(exon2start))
                     PSI="NAN"
                     return PSI
                 
@@ -993,8 +993,6 @@ def PSI_IR(sample, entry, gene):
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
-    #if sample=="S000001":
-    #    print(entry, overlap_counter, spliced_counter)
     #Calculate PSI
     IR=overlap_counter
     ER=spliced_counter
@@ -1002,8 +1000,6 @@ def PSI_IR(sample, entry, gene):
         PSI="NAN"
     else:
         PSI=str(round(IR/(IR+ER),2))
-        # if entry=="+_chr6_151944508_152060990" and sample=="S000001":
-        #     print(overlap_counter, spliced_counter)
 
     return PSI
 
