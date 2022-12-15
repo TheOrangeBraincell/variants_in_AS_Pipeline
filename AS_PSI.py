@@ -162,22 +162,9 @@ if args.name and args.coordinates:
 if not os.path.exists(args.out):
     os.makedirs(args.out)
     
-    
-#%% Testing new stuff
-
-"""
-#How to progress bar.
-n=70
-print("Testing")
-for i in range(0,n+1):
-    progress=int(i*100/(n))
-    print("#"*progress+" "*(100-progress)+" "+str(round(i/(n) *100, 2)) + "%", end="\r")
-
-print("#"*progress+" "*(50-progress)+" "+str(round(i/(n) *100, 2)) + "%\n", end="\r")
-"""
-
 
 #%% User Defined Functions
+
 
 
 def add_to(events, AA_counter, AD_counter):
@@ -244,6 +231,87 @@ def add_to(events, AA_counter, AD_counter):
         
     return(AA_counter, AD_counter)
 
+"""
+def Filter_Reads(open_start, open_stop, gene_chrom, gene_strand, samfile,
+                 spliced=True, unspliced=True):
+    
+    #reads
+    reads= samfile.fetch(chrom, open_start, open_stop)
+    
+    #initialize read dict to find pairs
+    read_dict=dict()
+    #insert size list, in case this is for IR
+    insert_size=dict()
+    for read in reads:
+        #Exclude non-primary alignments
+        if read.is_secondary:
+            continue
+        
+        #Exclude reads on wrong strand
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=strand:
+            continue
+        
+        
+        #Find read pairs
+        read_name=read.query_name
+        read_start=int(read.reference_start)
+        #read_length=int(read.infer_query_length()) #Note that this does not include Softclipped or N regions.
+        read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
+        #Check if pair is already in the dictionary
+        if read_name not in read_dict:
+            read_dict[read_name]=[[read_start, read_start+read_range, read.cigarstring]]
+        #If it is, we append the second read information.
+        else:
+            read_dict[read_name].append([read_start, read_start+read_range, read.cigarstring])
+        
+        #Sort them into spliced and unspliced for counting
+        spliced_reads=[]
+        unspliced_reads=[]
+        for read_name in read_dict:
+            #if there is only 1, then theres no problem.
+            if len(read_dict[read_name])==1:
+                #if spliced
+                if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                    spliced_reads.append(read_dict[read_name][0])
+                else:
+                    unspliced_reads.append(read_dict[read_name][0])
+            #If theres more than 1, a decision needs to be made.
+            else:
+                #If one of them is spliced, we count that one.
+                count=0
+                for read in read_dict[read_name]:
+                    if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                        count+=1
+                        spliced=read_dict[read_name].index(read)
+                if count==1:
+                    insert_size[read_name]=read.tlen
+                    spliced_reads.append(read_dict[read_name][spliced])
+                elif count==2:
+                    #both spliced and for same junction=no problem. either works.
+                    
+                    #Otherwise Who knows... 
+                    continue
+                elif count==0:
+                    #save insert size for IR
+                    insert_size[read_name]=read.tlen
+                    #shits complicated. 
+                    continue
+                else:
+                    #Now we messed up. Print error and exit.
+                    print("This aint right. Check this 'pair' out and find the bug: ", read_dict[read_name])
+                    quit()
+        
+    return spliced_reads, unspliced_reads
+"""
 def PSI_CE(sample, CE, gene):
     """
     
@@ -290,6 +358,19 @@ def PSI_CE(sample, CE, gene):
         # Exclude non-primary alignments
         if read.is_secondary:
             continue
+        #Exclude reads on wrong strand
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=strand:
+            continue
+        
         #exclude second read of pair, if maps to overlapping region.
         read_name=read.query_name
         read_start=int(read.reference_start)
@@ -821,8 +902,9 @@ def PSI_IR(sample, entry, gene):
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
     
     #Get Overlapping Reads
-    #Fetch reads in gene
-    reads_genome=samfile.fetch(chrom,gene_ranges[gene][2], gene_ranges[gene][3])
+    #Fetch reads in gene, since we want them to overlap with beginning or end or IR, the reads cant be too far away from our coordinates.
+    #so we use a generous range of pm 300.
+    reads_genome=samfile.fetch(chrom,exon1stop-300, exon2start+300)
     read_dict=dict()
     overlap_counter=0
 
