@@ -62,6 +62,7 @@ import time
 import pysam
 import os
 import math
+from inspect import currentframe, getframeinfo
 
 #%% Time
 
@@ -231,87 +232,41 @@ def add_to(events, AA_counter, AD_counter):
         
     return(AA_counter, AD_counter)
 
-"""
-def Filter_Reads(open_start, open_stop, gene_chrom, gene_strand, samfile,
-                 spliced=True, unspliced=True):
+
+def Filter_Reads(read, gene_strand):
+    skip=False
+    #Exclude non-primary alignments
+    if read.is_secondary:
+        skip=True
     
-    #reads
-    reads= samfile.fetch(chrom, open_start, open_stop)
+    #Exclude reads on wrong strand
+    if read.mate_is_reverse and read.is_read1:
+        read_strand="-"
+    elif read.mate_is_reverse and read.is_read2:
+        read_strand="+"
+    elif read.mate_is_forward and read.is_read1:
+        read_strand="+"
+    elif read.mate_is_forward and read.is_read2:
+        read_strand="-"
     
-    #initialize read dict to find pairs
-    read_dict=dict()
-    #insert size list, in case this is for IR
-    insert_size=dict()
-    for read in reads:
-        #Exclude non-primary alignments
-        if read.is_secondary:
-            continue
+    if read_strand!=gene_strand:
+        skip=True
         
-        #Exclude reads on wrong strand
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
-            continue
-        
-        
-        #Find read pairs
+    """
+    #exclude second read of pair, if maps to overlapping region.
         read_name=read.query_name
         read_start=int(read.reference_start)
-        #read_length=int(read.infer_query_length()) #Note that this does not include Softclipped or N regions.
-        read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
-        #Check if pair is already in the dictionary
-        if read_name not in read_dict:
-            read_dict[read_name]=[[read_start, read_start+read_range, read.cigarstring]]
-        #If it is, we append the second read information.
+        read_length=int(read.infer_query_length())
+        if read_name in read_dict:
+            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
+            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
+                continue
         else:
-            read_dict[read_name].append([read_start, read_start+read_range, read.cigarstring])
-        
-        #Sort them into spliced and unspliced for counting
-        spliced_reads=[]
-        unspliced_reads=[]
-        for read_name in read_dict:
-            #if there is only 1, then theres no problem.
-            if len(read_dict[read_name])==1:
-                #if spliced
-                if re.search(r'\d+M\d+N\d+M',read.cigarstring):
-                    spliced_reads.append(read_dict[read_name][0])
-                else:
-                    unspliced_reads.append(read_dict[read_name][0])
-            #If theres more than 1, a decision needs to be made.
-            else:
-                #If one of them is spliced, we count that one.
-                count=0
-                for read in read_dict[read_name]:
-                    if re.search(r'\d+M\d+N\d+M',read.cigarstring):
-                        count+=1
-                        spliced=read_dict[read_name].index(read)
-                if count==1:
-                    insert_size[read_name]=read.tlen
-                    spliced_reads.append(read_dict[read_name][spliced])
-                elif count==2:
-                    #both spliced and for same junction=no problem. either works.
-                    
-                    #Otherwise Who knows... 
-                    continue
-                elif count==0:
-                    #save insert size for IR
-                    insert_size[read_name]=read.tlen
-                    #shits complicated. 
-                    continue
-                else:
-                    #Now we messed up. Print error and exit.
-                    print("This aint right. Check this 'pair' out and find the bug: ", read_dict[read_name])
-                    quit()
-        
-    return spliced_reads, unspliced_reads
-"""
+            read_dict[read_name]=[read_start, read_start+read_length]
+    """
+    
+    return skip
+
 def PSI_CE(sample, CE, gene):
     """
     
@@ -334,7 +289,6 @@ def PSI_CE(sample, CE, gene):
     start=int(CE[1])
     stop=int(CE[2])
     strand=CE[3]                                                                        
-    #print(start, stop)
     
     #Find .bam file corresponding to sample name.
     for file in bam_file_list:
@@ -343,50 +297,12 @@ def PSI_CE(sample, CE, gene):
             index_file=file[0:-1]+"i"
             break
     
+    #We only want to count each read of a read pair once. So we have a list of reads that have already been counted.
+    counted=dict()
+    #Note that we prioritize counting spliced reads, so those are checked first.
+    
     #Initialize opening of file
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
-    
-    #C= number of reads within CE.
-    #For this we fetch the part of the alignment file in the exon.
-    exon_reads=samfile.fetch(chrom, start, stop)
-    #The coordinates do not need to be adjusted as pysam uses also start incl and end excl and 0 based.
-    
-    read_dict=dict()
-    counter=0
-    for read in exon_reads:
-        #Filter
-        # Exclude non-primary alignments
-        if read.is_secondary:
-            continue
-        #Exclude reads on wrong strand
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
-            continue
-        
-        #exclude second read of pair, if maps to overlapping region.
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length] 
-        counter+=1
-    
-    #counter needs to be normalized with length of the exon.
-    C=counter/(stop-start)
-    #print(counter)
-    #quit()
     
     #For the spliced reads, we need to fetch a bigger region and then recognise the spliced alignments.
     #We dont want to miss any reads, so we make this region the gene range the exon is in.
@@ -396,39 +312,16 @@ def PSI_CE(sample, CE, gene):
     counter_left=0
     counter_right=0
     counter_accross=0
-    #reset read dictionary
-    read_dict=dict()
-    
     for read in spliced_reads:
+        #Filter
+        if Filter_Reads(read, strand)==True:
+            continue
         #only spliced reads
         if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
             continue
-        #exclude second read of pair, if maps to overlapping region.
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length] 
-        
-        "Get strand information, exclude reads on wrong strand"
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
-            continue
-        
         #Allow for several splice junctions in one read.
         current_cigar = read.cigarstring
+        read_start=int(read.reference_start)
         #sum all numbers in cigar string for read length
         read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
         current_start = int(read_start)
@@ -437,7 +330,8 @@ def PSI_CE(sample, CE, gene):
             continue
         if read_start > stop and read_start+read_range > stop:
             continue
-
+        read_name=read.query_name
+    
         while re.search(r'\d+M\d+N\d+M', current_cigar):
             #assign splice junction variables
             junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
@@ -458,22 +352,86 @@ def PSI_CE(sample, CE, gene):
             
             #Number of spliced reads from previous to CE.
             if exon1_end< start and stop >= exon2_end>=start:
-                #print(exon1_end, exon2_start)
-                counter_left+=1
-                
+                #count!
+                if read_name not in counted:
+                    counter_left+=1
+                    counted[read_name]="spliced"
+                else:
+                    if counted[read_name]=="spliced":
+                        #has already been counted. proceed.
+                        pass
+                    else:
+                        #this shouldnt happen....
+                        print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                        pass
+            
             #Number of spliced reads from CE to next.   
             elif start <= exon1_start<=stop and exon2_start >stop:
-                counter_right+=1
-                
+                #count!
+                if read_name not in counted:
+                    counter_right+=1
+                    counted[read_name]="spliced"
+                else:
+                    if counted[read_name]=="spliced":
+                        #has already been counted. proceed.
+                        pass
+                    else:
+                        #this shouldnt happen....
+                        print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                        pass
+                    
             #Number of spliced reads accross CE.
             elif exon1_end<start and exon2_start>stop:
-                counter_accross+=1
-                
-            
+                #count!
+                if read_name not in counted:
+                    counter_accross+=1
+                    counted[read_name]="spliced"
+                else:
+                    if counted[read_name]=="spliced":
+                        #has already been counted. proceed.
+                        pass
+                    else:
+                        #this shouldnt happen....
+                        print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                        pass
+                    
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
     
+    #C= number of reads within CE.
+    #For this we fetch the part of the alignment file in the exon.
+    exon_reads=samfile.fetch(chrom, start, stop)
+    #The coordinates do not need to be adjusted as pysam uses also start incl and end excl and 0 based.
+    counter=0
+    for read in exon_reads:
+        #Filter
+        if Filter_Reads(read, strand)==True:
+            continue
+        #no spliced reads
+        if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+        read_name=read.query_name
+        if read_name not in counted:
+            counted[read_name]="unspliced"
+            #Theres no real problem if both reads are in the CE, but we dont want to count them twice. So the counter is indented.
+            counter+=1
+        else:
+            if counted[read_name]=="spliced":
+                #spliced reads > unspliced reads for counts. So we dont count this one.
+                continue
+            elif counted[read_name]=="unspliced":
+                #We have already counted it. Ignore and proceed.
+                continue
+            else:
+                #this shouldnt happen....
+                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                continue
+    
+    #counter needs to be normalized with length of the exon.
+    C=counter/(stop-start)
+    
+
     #Initialize spliced flag for PSI_CE_dict
     if counter_left!=0 or counter_right!=0:
         spliced_flag=True
@@ -516,6 +474,13 @@ def PSI_AA(gene, sample, event, start):
             bam_file=file
             index_file=file[0:-1]+"i"
             break
+        
+    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
+    counted=dict()
+    for i in range(0, len(event)):
+        counted[i]=dict()
+    #Note that we prioritize counting spliced reads, so those are checked first.
+    
     #Initialize opening of file
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
     
@@ -526,38 +491,18 @@ def PSI_AA(gene, sample, event, start):
     spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
     
     #Go through reads
-    read_dict=dict()
     for read in spliced_reads:
+        #Filter
+        if Filter_Reads(read, strand)==True:
+            continue
         #only spliced reads
         if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        #exclude second read of pair, if maps to overlapping region.
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length] 
-        
-        "Get strand information, exclude reads on wrong strand"
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
             continue
         
         #Allow for several splice junctions in one read.
         current_cigar = read.cigarstring
-        current_start = int(read_start)
+        current_start = int(read.reference_start)
+        read_name=read.query_name
         
         while re.search(r'\d+M\d+N\d+M', current_cigar):
             #assign splice junction variables
@@ -581,19 +526,41 @@ def PSI_AA(gene, sample, event, start):
                 #Then the AA starts have to match the exon2_starts
                 for i in range(0, len(event)):
                     if event[i]==str(exon2_start):
-                        spliced_counters[i]+=1
+                        if read_name not in counted[i]:
+                            spliced_counters[i]+=1
+                            counted[i][read_name]="spliced"
+                        else:
+                            if counted[i][read_name]=="spliced":
+                                #Great its already counted. skip.
+                                pass
+                            else:
+                                #this shouldnt happen....
+                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                                pass
             else:
                 #Then the AA starts have to match the exon1_ends
                 for i in range(0, len(event)):
                     #Same as for AD on the plus strand, the exon end has to be adjusted, because we calculate it to be exclusive.
                     if event[i]==str(exon1_end-1):
-                        spliced_counters[i]+=1
+                        if read_name not in counted[i]:
+                            spliced_counters[i]+=1
+                            counted[i][read_name]="spliced"
+                        else:
+                            if counted[i][read_name]=="spliced":
+                                #Great its already counted. skip.
+                                pass
+                            else:
+                                #this shouldnt happen....
+                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                                pass
+
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
     
     #Find difference reads
     difference_counters=[]
+    difference_lengths=[]
     for i in range(0, len(event)-1):
         start1=int(event[i])
         start2=int(event[i+1])
@@ -601,58 +568,72 @@ def PSI_AA(gene, sample, event, start):
         difference_reads=samfile.fetch(chrom, start1, start2)
         counter=0
         
-        read_dict=dict()
         #Filter reads
         for read in difference_reads:
+            #Filter
+            if Filter_Reads(read, strand)==True:
+                continue
             #no spliced reads
             if re.search(r'\d+M\d+N\d+M',read.cigarstring):
                 continue
-            #exclude second read of pair, if maps to overlapping region.
-            read_name=read.query_name
-            read_start=int(read.reference_start)
-            read_length=int(read.infer_query_length())
-            if read_name in read_dict:
-                if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-                read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                    continue
-            else:
-                read_dict[read_name]=[read_start, read_start+read_length] 
-            
-            #Get strand information, exclude reads on wrong strand
-            if read.mate_is_reverse and read.is_read1:
-                read_strand="-"
-            elif read.mate_is_reverse and read.is_read2:
-                read_strand="+"
-            elif read.mate_is_forward and read.is_read1:
-                read_strand="+"
-            elif read.mate_is_forward and read.is_read2:
-                read_strand="-"
-            
-            if read_strand!=strand:
-                continue
             
             #Filter conditions passed:
-            counter+=1
+            read_name=read.query_name
+            if read_name not in counted[i]:
+                counter+=1
+                counted[i][read_name]="unspliced"
+            else:
+                if counted[i][read_name]== "unspliced":
+                    #no problem. already counted. skip
+                    continue
+                elif counted[i][read_name]=="spliced":
+                    #Takes priority. already counted. skip.
+                    continue
+                else:
+                    #this shouldnt happen....
+                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                    continue
+            
         #Add difference reads into list
-        difference_counters.append(round(counter/length,2))
-        
+        difference_counters.append(counter)
+        difference_lengths.append(length)
     
     #Note that the first start, on the minus strand, has the highest coordinate.
     start_number=event.index(start)
     if start_number!=0 and strand=="+":
-        IR=difference_counters[start_number-1]+spliced_counters[start_number]
-        ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        total_reads=difference_counters[start_number-1]+spliced_counters[start_number]+sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=difference_counters[start_number-1]+spliced_counters[start_number]
+            ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
     elif start_number==0 and strand=="+":
-        IR=spliced_counters[start_number]
-        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        total_reads=spliced_counters[start_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=spliced_counters[start_number]
+            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
     elif start_number!=(len(event)-1) and strand=="-":
-        IR=difference_counters[start_number-1]+spliced_counters[start_number]
-        ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        total_reads=difference_counters[start_number-1]+spliced_counters[start_number]+sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=difference_counters[start_number-1]+spliced_counters[start_number]
+            ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
     else:
-        IR=spliced_counters[start_number]
-        ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+        total_reads=spliced_counters[start_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
+        if total_reads>10:
+            #Then calculate PSI
+            for i, x in enumerate(difference_counters):
+                difference_counters[i]=x/difference_lengths[i]
+            IR=spliced_counters[start_number]
+            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
     
-    if ER+ IR >10:
+    if total_reads >10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
@@ -688,6 +669,12 @@ def PSI_AD(gene, sample, exon, stop):
     #Initialize opening of file
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
     
+    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
+    counted=dict()
+    for i in range(0, len(event)):
+        counted[i]=dict()
+    #Note that we prioritize counting spliced reads, so those are checked first.
+    
     #Count reads
     #Find total number of spliced reads with coordinates
     spliced_counters=[0]*len(event)
@@ -695,38 +682,18 @@ def PSI_AD(gene, sample, exon, stop):
     spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
     
     #Go through reads
-    read_dict=dict()
     for read in spliced_reads:
+        #Filter
+        if Filter_Reads(read, strand)==True:
+            continue
         #only spliced reads
         if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        #exclude second read of pair, if maps to overlapping region.
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length] 
-        
-        "Get strand information, exclude reads on wrong strand"
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
             continue
         
         #Allow for several splice junctions in one read.
         current_cigar = read.cigarstring
-        current_start = int(read_start)
+        current_start = int(read.reference_start)
+        read_name=read.query_name
         
         while re.search(r'\d+M\d+N\d+M', current_cigar):
             #assign splice junction variables
@@ -744,18 +711,40 @@ def PSI_AD(gene, sample, exon, stop):
                 current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
                 current_start= exon2_start
                 continue
+            
             #Update counters based on matching starts
             if strand=="+":
                 #Then the AA starts have to match the exon2_starts
                 for i in range(0, len(event)):
                     #The coordinates on plus strand seem to be shifted for AD, by 1. Because we calculate it to be exclusive.
                     if str(event[i])==str(exon1_end-1):
-                        spliced_counters[i]+=1
+                        if read_name not in counted[i]:
+                            spliced_counters[i]+=1
+                            counted[i][read_name]="spliced"
+                        else:
+                            if counted[i][read_name]=="spliced":
+                                #Great its already counted. skip.
+                                pass
+                            else:
+                                #this shouldnt happen....
+                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                                pass
             else:
                 #Then the AA starts have to match the exon1_ends
                 for i in range(0, len(event)):
                     if str(event[i])==str(exon2_start):
-                        spliced_counters[i]+=1
+                        if read_name not in counted[i]:
+                            spliced_counters[i]+=1
+                            counted[i][read_name]="spliced"
+                        else:
+                            if counted[i][read_name]=="spliced":
+                                #Great its already counted. skip.
+                                pass
+                            else:
+                                #this shouldnt happen....
+                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                                pass
+            
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
@@ -770,38 +759,32 @@ def PSI_AD(gene, sample, exon, stop):
         difference_reads=samfile.fetch(chrom, stop1, stop2)
         counter=0
         
-        read_dict=dict()
         #Filter reads
         for read in difference_reads:
+            #Filter
+            if Filter_Reads(read, strand)==True:
+                continue
             #no spliced reads
             if re.search(r'\d+M\d+N\d+M',read.cigarstring):
                 continue
-            #exclude second read of pair, if maps to overlapping region.
-            read_name=read.query_name
-            read_start=int(read.reference_start)
-            read_length=int(read.infer_query_length())
-            if read_name in read_dict:
-                if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-                read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                    continue
-            else:
-                read_dict[read_name]=[read_start, read_start+read_length] 
-            
-            #Get strand information, exclude reads on wrong strand
-            if read.mate_is_reverse and read.is_read1:
-                read_strand="-"
-            elif read.mate_is_reverse and read.is_read2:
-                read_strand="+"
-            elif read.mate_is_forward and read.is_read1:
-                read_strand="+"
-            elif read.mate_is_forward and read.is_read2:
-                read_strand="-"
-            
-            if read_strand!=strand:
-                continue
             
             #Filter conditions passed:
-            counter+=1
+            read_name=read.query_name
+            if read_name not in counted[i]:
+                counter+=1
+                counted[i][read_name]="unspliced"
+            else:
+                if counted[i][read_name]== "unspliced":
+                    #no problem. already counted. skip
+                    continue
+                elif counted[i][read_name]=="spliced":
+                    #Takes priority. already counted. skip.
+                    continue
+                else:
+                    #this shouldnt happen....
+                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                    continue
+        
         #Add difference reads into list
         difference_counters.append(counter)
         difference_lengths.append(length)
@@ -849,7 +832,6 @@ def PSI_AD(gene, sample, exon, stop):
 
     return PSI
     
-
 def PSI_IR(sample, entry, gene):
     """
 
@@ -893,27 +875,98 @@ def PSI_IR(sample, entry, gene):
                     #print("It happend for "+ sample+ " CE coordinates: "+ str(CE_start)+", "+ str(CE_stop)+" IR coordinates: "+ str(exon1stop)+", "+ str(exon2start))
                     PSI="NAN"
                     return PSI
-                
-                
+                    
     #Insert read confidence interval
     insert_confidence=[insert_mean-1.96*(insert_sd/math.sqrt(len(sample_names))),insert_mean+1.96*(insert_sd/math.sqrt(len(sample_names)))]
     
+    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
+    counted=dict()
+    #Note that we prioritize counting spliced reads, so those are checked first.
+    
     #Initialize opening of file
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
+    
+    #Get Spliced Reads
+    #Open bam file in gene range.
+    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][2], gene_ranges[gene][3])
+    
+    spliced_counter=0
+    for read in spliced_reads:
+        #Filter
+        if Filter_Reads(read, strand)==True:
+            continue
+        #only spliced reads
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            continue
+
+        read_start=int(read.reference_start)
+        read_length=int(read.infer_query_length())
+        read_name=read.query_name
+        #Allow for several splice junctions in one read.
+        current_cigar = read.cigarstring
+        current_start = int(read_start)
+        
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            exon1 = int(junction.group(1))
+            intron = int(junction.group(2))
+            exon2 = int(junction.group(3))
+            exon1_start = current_start
+            exon1_end = exon1_start+exon1+1  #exclusive
+            exon2_start = exon1_end+intron -1 #inclusive
+                
+            #skip alignments with less than 3 matching bases in an exon.
+            if exon1<3 or exon2<3:
+                # update cigar string
+                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+                current_start= exon2_start
+                continue
+            
+            if strand=="+":
+                if exon1_end<=exon1stop and exon2_start>=exon2start:
+                    if read_name not in counted:
+                        spliced_counter+=1
+                        counted[read_name]="spliced"
+                    else:
+                        if counted[read_name]=="spliced":
+                            #already counted. no need to double up.
+                            pass
+                        elif counted[read_name]=="left" or counted[read_name]=="right":
+                            #this shouldnt happen....
+                            print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                            pass
+            
+            else:
+                if exon1_end<=exon1stop and exon2_start>=exon2start:
+                    if read_name not in counted:
+                        spliced_counter+=1
+                        counted[read_name]="spliced"
+                    else:
+                        if counted[read_name]=="spliced":
+                            #already counted. no need to double up.
+                            pass
+                        elif counted[read_name]=="left" or counted[read_name]=="right":
+                            #this shouldnt happen....
+                            print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                            pass
+            
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= exon2_start
     
     #Get Overlapping Reads
     #Fetch reads in gene, since we want them to overlap with beginning or end or IR, the reads cant be too far away from our coordinates.
     #so we use a generous range of pm 300.
     reads_genome=samfile.fetch(chrom,exon1stop-300, exon2start+300)
-    read_dict=dict()
     overlap_counter=0
 
     #Only keep IR which have overlapping reads on both sides.
     left=False
     right=False
     for read in reads_genome:
-        #Filter. First exclude non-primary alignments
-        if read.is_secondary:
+        #Filter
+        if Filter_Reads(read, strand)==True:
             continue
         #no spliced reads
         if re.search(r'\d+M\d+N\d+M',read.cigarstring):
@@ -923,30 +976,9 @@ def PSI_IR(sample, entry, gene):
         if read.tlen>insert_confidence[1]:
             continue
         
-        #Exclude second read of pair if they map to the same region.
         read_name=read.query_name
         read_start=int(read.reference_start)
         read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length] 
-            
-        #Get strand information, exclude reads on wrong strand
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
-            continue
-        
         #check coordinates, if they overlap the exon1end or the exon2start, it could be an overlap read.
         parts=re.search(r'((?:\d+[I,D,S,H])?)((?:\d+M)*)((?:\d+[I,D,S,H])?)((?:\d+M)?)((?:\d+[I,D,S,H])?)',read.cigarstring)
         #5 groups: first one before match, second match, third one in between matches, fourth one match, 5th following match.
@@ -995,86 +1027,46 @@ def PSI_IR(sample, entry, gene):
 
         #Find the overlapping ones left side
         if read_start<=exon1stop and read_stop>exon1stop:
-            overlap_counter+=1
-            left=True
-
+            if read_name not in counted:
+                counted[read_name]="left"
+                overlap_counter+=1
+                left=True
+            else:
+                if counted[read_name]=="left":
+                    #already counted. but we need a flag from left or right.
+                    #flag already set if left, so we can leave it.
+                    continue
+                elif counted[read_name]=="right":
+                    #Already counted, but we need to set the flag.
+                    left=True
+                elif counted[read_name]=="spliced":
+                    #This should not happen, as the reads in a pair cannot pick up 2 versions of one event.
+                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                    continue
         #right side
         elif read_start<exon2start and read_stop>=exon2start:
-            overlap_counter+=1
-            right=True
+            if read_name not in counted:
+                counted[read_name]="right"
+                overlap_counter+=1
+                right=True
+            else:
+                if counted[read_name]=="right":
+                    #already counted. but we need a flag from left or right.
+                    #flag already set if left, so we can leave it.
+                    continue
+                elif counted[read_name]=="left":
+                    #Already counted, but we need to set the flag.
+                    right=True
+                elif counted[read_name]=="spliced":
+                    #This should not happen, as the reads in a pair cannot pick up 2 versions of one event.
+                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
+                    continue
     
     #If either side has no overlapping reads, then the PSI score will be NAN and the spliced reads do not need to be counted.
     if left==False or right==False:
         PSI="NAN"
         return PSI
     
-    #Get Spliced Reads
-    #Open bam file in gene range.
-    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][2], gene_ranges[gene][3])
-    
-    #Go through reads
-    read_dict=dict()
-    spliced_counter=0
-    for read in spliced_reads:
-        #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        #exclude second read of pair, if maps to overlapping region.
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length] 
-        
-        "Get strand information, exclude reads on wrong strand"
-        if read.mate_is_reverse and read.is_read1:
-            read_strand="-"
-        elif read.mate_is_reverse and read.is_read2:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read1:
-            read_strand="+"
-        elif read.mate_is_forward and read.is_read2:
-            read_strand="-"
-        
-        if read_strand!=strand:
-            continue
-        
-        #Allow for several splice junctions in one read.
-        current_cigar = read.cigarstring
-        current_start = int(read_start)
-        
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
-            #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-            exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
-            exon1_start = current_start
-            exon1_end = exon1_start+exon1+1  #exclusive
-            exon2_start = exon1_end+intron -1 #inclusive
-                
-            #skip alignments with less than 3 matching bases in an exon.
-            if exon1<3 or exon2<3:
-                # update cigar string
-                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-                current_start= exon2_start
-                continue
-            
-            if strand=="+":
-                if exon1_end<=exon1stop and exon2_start>=exon2start:
-                    spliced_counter+=1
-            
-            else:
-                if exon1_end<=exon1stop and exon2_start>=exon2start:
-                    spliced_counter+=1
-            
-            # update cigar string
-            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-            current_start= exon2_start
     #Calculate PSI
     IR=overlap_counter
     ER=spliced_counter
