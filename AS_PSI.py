@@ -5,7 +5,9 @@ File Name: AS_PSI.py
 Author: Mirjam Karlsson-Müller
 
 Description:
-    
+    Finds AS events in annotated genes from GENCODE and RefSeq and calculates PSI scores per event and sample.
+    Returns 4 separate PSI matrices, one per event, with event location x samples.
+    Also returns 4 .bed files, one per event, with event location entries, possible to view in f.e. igv.
     
 Abbreviations:
     AS=     Alternative Splicing
@@ -15,14 +17,48 @@ Abbreviations:
     IR=     Intron Retention
     
 Procedure: 
-    1.
-    2.
-    3.
+    1. Creates a dictionary with genes and their annotated exons from databases GENCODE and RefSeq.
+    2. Going through this dictionary, finds potential AS events:
+        AD/AA: Find exons with overlap, put them into AA, AD dictionary according to type of overlap and strand.
+        CE: Every exon thats not first or last is a potential CE.
+        IR: Every space between two exons in a transcript can be a potential IR event.
+    3. For each of the found potential events, calculates PSI score per sample.
 
-Modules:
+Modules: 
+    argparse: for processing console input
+    glob : To find files in local directories
+    re : regular expressions
+    time : To measure run time
+    pysam : To open .bam files
+    os : To check if files/paths exist.
+    math : To use simple mathematic functions
+    inspect : To find exact line and print it.
     
 
 List of Functions:
+    add_to(): 
+        Adds exon to AD and/or AA event. If the event this exon belongs to does not exist yet, creates new one.
+        Specific cases for plus and negative strand. 
+    
+    Filter_Reads(): 
+        Basic filtering done for all .bam file entries before processing. Reads with non-primary alignments
+        as well as reads on the wrong strand, are filtered out.
+    
+    PSI_CE(): 
+        Calculates the PSI score for one sample and potential CE event. Also requires gene name as input.
+        Returns PSI score as string for easier writing and allowing for NAN
+    
+    PSI_AA():
+        Calculates the PSI score for one sample and start in AA event. Also requires gene name as input.
+        Returns PSI score as string for easier writing and allowing for NAN
+    
+    PSI_AD():
+        Calculates the PSI score for one sample and stop in AD event. Also requires gene name as input.
+        Returns PSI score as string for easier writing and allowing for 
+    
+    PSI_IR():
+        Calculates the PSI score for one sample and potential IR event. Also requires gene name as input.
+        Returns PSI score as string for easier writing and allowing for NAN
     
     
 Useage:
@@ -35,7 +71,7 @@ Useage:
         - What type of alternative splicing event?
 
     Instructions:
-        Run in command line.
+        Run in command line. For example.
         
         #with coordinates f.e. Estrogen Receptor
         python variants_in_AS_Pipeline/AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968"
@@ -46,9 +82,6 @@ Useage:
         
         #for server
         python AS_PSI.py -s /raidset/mi3258mu-se/Mirjam -o PSI_ESR1.tsv -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE -c "chr6:151690496-152103274"
-        
-
-        #no coordinates/name
         
 Possible Bugs:
 """
@@ -72,11 +105,14 @@ start_time=time.time()
 
 "0. Setting up argparse, handling input parameters"
 
-parser = argparse.ArgumentParser(prog='VCF Parser',
-                                 usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
-                                     [-c] "chrX:XXXXXX-XXXXXX"',
-                                 description="""Creates a genotype table out of
-                                 several samples. Containing location x sample.""")
+parser = argparse.ArgumentParser(prog='Detect and Score Alternative Splicing',
+                                 usage='%(prog)s -s SAMPLE-FOLDER -o OUTPUT-FOLDER \
+                                     -g GENCODE-FILE -r REFSEQ-FILE \
+                                         [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE \
+                                             -is INSERT-SIZE',
+                                 description="""Per AS event of interest, creates
+                                 a table with the PSI scores supporting said event
+                                 per sample in sample folder.""")
 
 parser.add_argument('--samples', '-s', required=True,
                     help='folder containing sample folders containing among \
@@ -92,9 +128,6 @@ parser.add_argument('--gencode', '-g', required=True,
 parser.add_argument('--refseq', '-r', required=True,
                     help="""tsv file containing bed file information on 
                     annotated exons from RefSeq as well as gene names.""")
-parser.add_argument('--name', '-n', type=str,
-                    help="""Symbol of gene of interest. f.e. ESR1. 
-                    (Symbol by HUGO Gene Nomenclature Committee).""")
 parser.add_argument('--AS', '-as', type=str, required=True,
                     help="""Which type of alternative splicing event we are
                     interested in. "CE" for Casette Exons, "AA" for alternative
@@ -153,11 +186,6 @@ if "IR" in inputs:
         raise argparse.ArgumentTypeError("""Insert Sizes are either missing or
                                          of wrong format. Required format is:
                                              'Mean [float] Standard Deviation [float]'""")
-
-if args.name and args.coordinates:
-    raise argparse.ArgumentError("""Cannot process input name and coordinates. 
-                                 Please use only one or the other.""")
-    quit()
 
 #Create output directory if not there already
 if not os.path.exists(args.out):
@@ -252,19 +280,6 @@ def Filter_Reads(read, gene_strand):
     if read_strand!=gene_strand:
         skip=True
         
-    """
-    #exclude second read of pair, if maps to overlapping region.
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        if read_name in read_dict:
-            if read_dict[read_name][0]<=read_start<=read_dict[read_name][1] or \
-            read_dict[read_name][0]<=read_start+read_length<=read_dict[read_name][1]:
-                continue
-        else:
-            read_dict[read_name]=[read_start, read_start+read_length]
-    """
-    
     return skip
 
 def PSI_CE(sample, CE, gene):
@@ -640,7 +655,7 @@ def PSI_AA(gene, sample, event, start):
         
     return PSI
 
-def PSI_AD(gene, sample, exon, stop):
+def PSI_AD(gene, sample, event, stop):
     """
     
     Parameters
