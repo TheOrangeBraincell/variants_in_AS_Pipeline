@@ -35,6 +35,7 @@ import argparse
 import glob
 import os
 import time
+import re
 
 #%% Start Timer 
 
@@ -54,6 +55,9 @@ parser.add_argument('--input', '-i', required=True,
                     help="""Input file containing location table.""")
 parser.add_argument('--out', '-o', required=True,
                     help="""Output file containing genotypes.""")
+parser.add_argument('--coordinates', '-c', type=str,
+                    help="""Start and stop coordinates of region of interest,
+                    as well as chromosome. Format: chr[]:start-stop""")
 
 args = parser.parse_args()
 
@@ -61,6 +65,19 @@ args = parser.parse_args()
 if not os.path.exists(args.samples):
     print("The input folder is invalid. Did you misstype the directory structure? Try again.")
     quit()
+
+if args.coordinates:
+    if re.search(r'[a-z]{3}[MXY]?\d*:\d+-\d+', args.coordinates):
+        coord = re.search(r'([a-z]{3}[MXY]?\d*):(\d+)-(\d+)', args.coordinates)
+        coord_chrom = coord.group(1)
+        coord_start = int(coord.group(2))
+        coord_stop = int(coord.group(3))
+
+    else:
+        raise argparse.ArgumentTypeError("""The given coordinates are in the 
+                                         wrong format. Input as 
+                                         chrX:XXXX-XXXX.""")
+        quit()
 
 #Check if output file already exists.
 while True:
@@ -111,12 +128,16 @@ for file in tsv_list:
             #if line starts with E then its a gene id
             if line.startswith("E"):
                 chrom=line.split("\t")[2]
-                gene_id=line.split("\t")[1]
-                start=line.split("\t")[4]
-                stop=line.split("\t")[5]
-                fpkm=line.split("\t")[7]
-                
-                tsv_info[tsv_sample_name].append([chrom, start, stop, gene_id, fpkm])
+                #Sort out chromosomes outside of range. Because we run on server by chromosome. saves memory.
+                if chrom != coord_chrom:
+                    continue
+                else:
+                    gene_id=line.split("\t")[1]
+                    start=line.split("\t")[4]
+                    stop=line.split("\t")[5]
+                    fpkm=line.split("\t")[7]
+                    
+                    tsv_info[tsv_sample_name].append([chrom, start, stop, gene_id, fpkm])
                 
     current_file+=1
     percentage=100*current_file/total_files
