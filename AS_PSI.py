@@ -195,7 +195,6 @@ if not os.path.exists(args.out):
 #%% User Defined Functions
 
 
-
 def add_to(events, AA_counter, AD_counter):
     for e in events:
         
@@ -1208,16 +1207,17 @@ for event in inputs:
         print("#"*25+ " "*75+ "  25 %", end="\r")
         #print(filtered_gene_dict)
         #Remove first and last exon for each transcript, as they cannot be CE
-        new_gene_dict=dict()
+        CE_gene_dict=dict()
         for gene in filtered_gene_dict:
             if len(filtered_gene_dict[gene].items())>0:
-                new_gene_dict[gene]=dict()
+                CE_gene_dict[gene]=dict()
                 for trans_ID in filtered_gene_dict[gene]:
-                    new_gene_dict[gene][trans_ID]=[i for i in filtered_gene_dict[gene][trans_ID] if i[4]=="middle"]  
-                
-        CE_gene_dict=new_gene_dict
+                    CE_gene_dict[gene][trans_ID]=[i for i in filtered_gene_dict[gene][trans_ID] if i[4]=="middle"]  
+        
+        #no longer need previous dictionary.
+        del filtered_gene_dict
         print("#"*50+ " "*50+ " 50 %", end="\r")
-        #print(CE_gene_dict)
+
         #Transcript IDs are no longer required, and additionally there
         #is definitely duplicate exons between R and G as well as within each
         #of them. Those need to be removed.
@@ -1225,7 +1225,7 @@ for event in inputs:
         #Creates dictionary with potential casette exons per gene.
         gene_exons=dict()
         #Creates a dictionary where each exon is listed with its database (in case needed later)
-        exons_db=dict()
+        #exons_db=dict()
         
         CE_counter=0
         for gene in CE_gene_dict:
@@ -1236,14 +1236,16 @@ for event in inputs:
                         if exon[0:-1] not in gene_exons[gene]:
                             gene_exons[gene].append(exon[0:-1])
                             CE_counter+=1
-                        if "_".join(exon[0:-1]) in exons_db:
-                            if exon[-1] in exons_db["_".join(exon[0:-1])]:
-                                continue
-                            else:
-                                exons_db["_".join(exon[0:-1])]+=exon[-1]
-                        else:
-                            exons_db["_".join(exon[0:-1])]=exon[-1]
-            
+                        #if "_".join(exon[0:-1]) in exons_db:
+                        #    if exon[-1] in exons_db["_".join(exon[0:-1])]:
+                        #        continue
+                        #    else:
+                        #        exons_db["_".join(exon[0:-1])]+=exon[-1]
+                        #else:
+                        #    exons_db["_".join(exon[0:-1])]=exon[-1]
+        #no longer need CE_gene_dict
+        del CE_gene_dict
+        
         print("#"*100+ " 100 %\n", end="\r")
         print("Calculating PSI scores for Casette Exons: \n", end="\r")
         out=open(args.out+"PSI_CE.tsv", "w")
@@ -1291,7 +1293,7 @@ for event in inputs:
                 out.write("{}\t{}\t{}\t{}\t.\t{}\n".format(chrom, start, stop, name, strand))
         out.close()
         print("Writing Casette Exon coordinates into .bed file: Done! \n", end="\r")
-    
+        
     #"Alternative Donors/Acceptors"
     elif event.upper()=="AD" or event.upper()=="AA":
         if AA_AD_dict ==False:
@@ -1314,10 +1316,6 @@ for event in inputs:
             #Go through all exons per gene to find alternative donors/acceptors.
             potential_AA=dict()
             potential_AD=dict()
-            #key=start, value=stop
-            coordinates=dict()
-            #key=start_stop, value=entry.
-            coord_exons=dict()
             #initiate progress counter
             c=0
             #For progress updates during PSI.
@@ -1327,6 +1325,11 @@ for event in inputs:
                 #Initiate potential AA/AD for each gene.
                 potential_AA[gene]=[]
                 potential_AD[gene]=[]
+                #Dont need to save coordinates from different gene.
+                #key=start, value=stop
+                coordinates=dict()
+                #key=start_stop, value=entry.
+                coord_exons=dict()
                 #Go through exons to find potentials
                 for entry in gene_exons[gene]:
                     start=int(entry[1])
@@ -1385,7 +1388,8 @@ for event in inputs:
             #Final bar
             print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
             AA_AD_dict=True
-
+        #no longer needed!
+        del gene_exons
         # Calculate psi scores for potential AA, if asked for.
         if event=="AA":
             print("Calculating PSI scores for alternative acceptors: \n", end="\r")

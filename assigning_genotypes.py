@@ -78,7 +78,7 @@ if args.coordinates:
                                          wrong format. Input as 
                                          chrX:XXXX-XXXX.""")
         quit()
-
+""" Manual option. Need server option.
 #Check if output file already exists.
 while True:
     if os.path.isfile(args.out):
@@ -97,7 +97,11 @@ while True:
     else:
         #There is no problem with this output file name. We proceed with the code.
         break
-
+"""
+#Server option
+if os.path.isfile(args.out):
+    print("The output file already exists, we assume it is complete.")
+    quit()
 
 #%% Read in gene.tsv's
 
@@ -105,46 +109,12 @@ while True:
 argument_glob=args.samples+"/**/gene.tsv"
 tsv_list=glob.glob(argument_glob, recursive=True)
 
-#If no vcf files are found, quit the program.
+#If no tsv files are found, quit the program.
 if len(tsv_list)==0:
     print("""There were no gene.tsv files found in the input folder. Please make 
           sure to use the right input folder. The gene.tsv files can be in any 
           subfolder of the input folder.""")
     quit()
-
-#initialize dictionary
-tsv_info=dict()
-#Progress updates
-total_files=len(tsv_list)
-current_file=0
-percentage=100*current_file/total_files
-print("Reading in gene.tsv: {:.2f}%".format(percentage),end="\r")
-
-for file in tsv_list:
-    tsv_sample_name=file.split("/")[-5]
-    tsv_info[tsv_sample_name]=[]
-    with open(file, "r") as tsv:
-        for line in tsv:
-            #if line starts with E then its a gene id
-            if line.startswith("E"):
-                chrom=line.split("\t")[2]
-                #Sort out chromosomes outside of range. Because we run on server by chromosome. saves memory.
-                if chrom != coord_chrom:
-                    continue
-                else:
-                    gene_id=line.split("\t")[1]
-                    start=line.split("\t")[4]
-                    stop=line.split("\t")[5]
-                    fpkm=line.split("\t")[7]
-                    
-                    tsv_info[tsv_sample_name].append([chrom, start, stop, gene_id, fpkm])
-                
-    current_file+=1
-    percentage=100*current_file/total_files
-    print("Reading in gene.tsv: {:.2f}%".format(percentage),end="\r")
-
-print("Reading in gene.tsv: Done!            \n", end="\r")
-
 
 #%% Read off location table, assign genotypes as we go along and print to output file.
 
@@ -169,21 +139,36 @@ def HMZR_NOEX(variant_ID, sample):
     genotype
 
     """
+    #Variant coordinates
+    chrom, position= variant_ID.split("_")
+    #Open gene expression file for specific sample
+    for tsv in tsv_list:
+        if sample in tsv:
+            file=tsv
+            break
+    tsv=open(file, "r")
     genotype="NE"
-    for gene in tsv_info[sample]:
-        chrom, position= variant_ID.split("_")
-        #print(gene)
-        #Find gene that the variant is in
-        if chrom==gene[0]:
-            if int(gene[1])<int(position)<int(gene[2]):
-                #Check FPKM value:
-                if float(gene[4])>=10:
-                    #print(gene[4])
-                    genotype="0/0"
-                    return genotype
-        
+    for line in tsv:
+        #If line starts with E then its a gene ID;
+        if line.startswith("E"):
+            chrom_tsv=line.split("\t")[2]
+            #sort out chromosomes out of range
+            if chrom!= chrom_tsv:
+                continue
+            else:
+                #read coordinates of tsv
+                start=line.split("\t")[4]
+                stop=line.split("\t")[5]
+                if int(start)< int(position)<int(stop):
+                    #Check fpkm value as we are in right gene.    
+                    fpkm=line.split("\t")[7]
+                    if float(fpkm)>=10:
+                        genotype="0/0"
+                        tsv.close()
+                        return genotype
+    tsv.close()
     return genotype
-
+    
 
 print("Assigning Genotypes...", end="\r")
 
