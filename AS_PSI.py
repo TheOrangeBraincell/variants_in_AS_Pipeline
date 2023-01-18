@@ -1388,8 +1388,7 @@ for event in inputs:
             #Final bar
             print("#"*int(percentage)+ " "*(100-int(percentage))+ " "+ str(percentage)+ " %\n", end="\r")
             AA_AD_dict=True
-        #no longer needed!
-        del gene_exons
+
         # Calculate psi scores for potential AA, if asked for.
         if event=="AA":
             print("Calculating PSI scores for alternative acceptors: \n", end="\r")
@@ -1453,7 +1452,7 @@ for event in inputs:
             print("Calculating PSI scores for Alternative Donors: \n", end="\r")
             out=open(args.out+"PSI_AD.tsv", "w")
             out.write("#PSI Table AD \n")
-            out.write("Event_Location"+"\t".join(sample_names)+"\n")
+            out.write("Event_Location\t"+"\t".join(sample_names)+"\n")
             #Progress
             counter=0
             for gene in potential_AD:
