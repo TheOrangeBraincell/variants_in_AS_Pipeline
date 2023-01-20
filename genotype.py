@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Date: Thu Jan 19 10:24:12 2023
-File Name: genotype_v2.py
+File Name: genotype.py
 Author: Mirjam Karlsson-Müller
 
 Description:
@@ -11,9 +11,9 @@ List of Functions:
     none
     
 Procedure: 
-    1.
-    2.
-    3.
+    1. Reads in gene range file created by gene_ranges.py
+    2. Iterates through genes and location table at the same time (as they are sorted by coordinates thats ok)
+    3. If variant in gene, assign genotype based on fpkm (>=10 0/0, otherwise NE), otherwise assign genotype NE (not expressed)
 
 Input: 
     - Sorted Location table as created by vcf_location_table.py and sorted by Sort_Locations.sh
@@ -22,10 +22,12 @@ Input:
 
 Useage:
     for ESR1 f.e.
-    python genotype_v2.py -s ../Sample_Data/ -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151690496-152103274" 
+    python genotype.py -s ../Sample_Data/ -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151690496-152103274" 
     
     
 Possible Bugs:
+    location tables need to be created by vcf_location_table.py and sorted with Sort_Location.sh
+    gene_ranges.tsv needs to be created with gene_ranges.py
 """
 
 #%% Imports
@@ -41,9 +43,10 @@ start_time=time.time()
 
 #%% Argparse
 
-parser = argparse.ArgumentParser(prog='assigning genotypes v2',
+parser = argparse.ArgumentParser(prog='assigning genotypes',
                                  usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
-                                     [-c] "chrX:XXXXXX-XXXXXX"',
+                                     -i LOCATION-TABLE [-c] "chrX:XXXXXX-XXXXXX"\
+                                         -r RANGE-TSV',
                                  description="""Creates a genotype table out of
                                  a location table. Containing genotypes for location x sample.""")
 
@@ -172,14 +175,25 @@ for line in locations:
                 if sample in tsv: 
                     #Find corresponding gene, save for sample name
                     file=open(tsv, "r")
+                    #If the gene name is not in the gene.tsv file, we assume not expressed due to no information
+                    gene_found=False
                     for l in file:
                         if current_gene in l:
+                            gene_found=True
                             #save genotype dictionary if fpkm >=10 or not
                             if float(l.split("\t")[7])>=10:
                                 fpkm[sample]="0/0"
                             else:
                                 fpkm[sample]="NE"
+                            break
+                    if gene_found==False:
+                        for sample in sample_names:
+                            fpkm[sample]="NE"
                     file.close()
+        #If for some sample, there was no match of the name found, notice here:
+        for sample in sample_names:
+            if sample not in fpkm:
+                fpkm[sample]=="NE"
         continue
     #Now all that is left is entries. shape: chr_position\t samples
     variant_chrom,variant_position = line.split("\t")[0].split("_")
@@ -256,14 +270,14 @@ for line in locations:
                                 for sample in sample_names:
                                     fpkm[sample]="NE"
                             file.close()
+                #If for some sample, there was no match of the name found, notice here:
+                for sample in sample_names:
+                    if sample not in fpkm:
+                        fpkm[sample]=="NE"
             #do not go to next line, as we did not find the variants location in regards to the gene.
+    
     #Now that we have replaced all "-" in the line, we write the line out to the output file.
     genotypes.write(variant_chrom+"_"+variant_position+"\t"+"\t".join(entries)+"\n")
-    
-            
-
-
-
 
 
 #%% Close location file and output file.

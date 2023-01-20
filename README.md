@@ -74,22 +74,28 @@ python vcf_location_table.py -s ../Sample_Data/ -o location_table_WG.tsv
 The output file is a location x sample table, containing genotypes where given by the .vcf files, and spaceholders "-" where there is no matching entry for a sample in a .vcf file.
 
 ### 2. Parsing through gene expression files: Assigning Genotypes
-For this step, all gene expression information files for all samples in the location table created in step 1, are needed. These files contain the FPKM per gene and sample. Based on that value, the missing genotypes in the location table are assigned. This is done with the script *assigning_genotypes.py*.
+For this step, all gene expression information files for all samples in the location table created in step 1, are needed. These files contain the FPKM per gene and sample. Based on that value, the missing genotypes in the location table are assigned. This is done with the script *genotype.py*. But this script requires the variant location tables to be sorted. So that is done first with bash script *Sort_Locations.sh* to be run in folder with location tables:
+```
+~/Sort_Locations.sh
+```
+The location tables are then saved in a new "Sorted" folder. On which we can run the genotype script.
 
 ```
-usage: assigning genotypes -s SAMPLE-FOLDER -o OUTPUT -i INPUT
+usage: assigning genotypes -s INPUT-FOLDER -o OUTPUT -i LOCATION-TABLE [-c] "chrX:XXXXXX-XXXXXX"  -r RANGE-TSV 
 
 Creates a genotype table out of a location table. Containing genotypes for location x sample.
 
 optional arguments:
--h, --help                       show this help message and exit
---samples SAMPLES, -s SAMPLES    folder containing sample folders containing gene.tsv files.
---input INPUT, -i INPUT          Input file containing location table.
---out OUT, -o OUT                Output file containing genotypes. 
+-h, --help                                   show this help message and exit
+--samples SAMPLES, -s SAMPLES                folder containing sample folders containing gene.tsv files.
+--input INPUT, -i INPUT                      Input file containing location table.
+--out OUT, -o OUT                            Output file containing genotypes.
+--coordinates COORDINATES, -c COORDINATES    Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-stop
+--ranges RANGES, -r RANGES                   File containing gene ranges created with refseq and gencode. 
 ```
 Run with for example:
 ```
-python assigning_genotypes.py -s ../Sample_Data/ -i location_table_ESR1.tsv -o genotype_table.tsv 
+python genotype.py -s ../Sample_Data/ -i sorted_location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151690496-152103274" 
 ```
 
 The result is a complete location x sample table, containing the genotype of every sample at every location.
