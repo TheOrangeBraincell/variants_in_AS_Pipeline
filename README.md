@@ -78,8 +78,21 @@ For this step, all gene expression information files for all samples in the loca
 ```
 ~/Sort_Locations.sh
 ```
-The location tables are then saved in a new "Sorted" folder. On which we can run the genotype script.
+The location tables are then saved in a new "Sorted" folder. Furthermore we require an input file giving us the coordinates of each annotated gene found in the RefSeq and GENCODE database. This we create with *gene_ranges.py*:
 
+```
+usage: Create gene range tsv -o OUTPUT-FILE -g GENCODE-FILE -r REFSEQ-FILE [-c] "chrX:XXXXXX-XXXXXX"
+
+Create a tsv table that contains information on the chromosome, strand, min and max coordinate for every gene found in RefSeq or GENCODE.
+
+optional arguments:
+-h, --help                                   show this help message and exit
+--out OUT, -o OUT                            Output file, containing gene ranges.
+--coordinates COORDINATES, -c COORDINATES    Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-stop
+--gencode GENCODE, -g GENCODE                tsv file containing bed file information on annotated exons from GENCODE39 as well as gene names.
+--refseq REFSEQ, -r REFSEQ                   tsv file containing bed file information on annotated exons from RefSeq as well as gene names.
+```
+Now we are ready to run *genotypes.py*.
 ```
 usage: assigning genotypes -s INPUT-FOLDER -o OUTPUT -i LOCATION-TABLE [-c] "chrX:XXXXXX-XXXXXX"  -r RANGE-TSV 
 

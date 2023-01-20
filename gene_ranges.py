@@ -43,11 +43,10 @@ start_time=time.time()
 parser = argparse.ArgumentParser(prog='Create gene range tsv',
                                  usage='%(prog)s -o OUTPUT-FILE \
                                      -g GENCODE-FILE -r REFSEQ-FILE \
-                                         [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE \
-                                             -is INSERT-SIZE',
-                                 description="""Per AS event of interest, creates
-                                 a table with the PSI scores supporting said event
-                                 per sample in sample folder.""")
+                                         [-c] "chrX:XXXXXX-XXXXXX"',
+                                 description="""Create a tsv table that contains
+                                 information on the chromosome, strand, min and max
+                                 coordinate for every gene found in RefSeq or GENCODE.""")
 
 parser.add_argument('--out', '-o', required=True,
                     help="""Output file, containing gene ranges.""")
