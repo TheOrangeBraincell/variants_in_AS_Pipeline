@@ -33,7 +33,7 @@ Useage:
     Inputs:
         - Database files for GENCODE and RefSeq respectively
         - output file name for table of eventlocations/types
-        - evtl. coordinates or name of a gene/region of interest
+        - evtl. coordinates of a gene/region of interest
         - What type of alternative splicing event are we identifying? Multiple possible in listformat
         - If IR is one of the AS events, requires mean and sd of intron size.
         - Whether bed file is wished for
@@ -46,7 +46,7 @@ Useage:
         Run in command line. For example.
         
         #with coordinates f.e. Estrogen Receptor
-        python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968" -ra new_PSI_script/gene_ranges.tsv
+        python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL 
         
         #With coordinates f.e. BRCA1 (neg strand)
         python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_BRCA1.tsv -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968" -ra new_PSI_script/gene_ranges.tsv
@@ -319,8 +319,8 @@ print("Finding AS events: {:.2f}%".format(0), end="\r")
 #So that the output is sorted by gene not by event
 for gene in gene_dict:
     #gene header for output file
-    out.write("#"+gene+" ,"+gene_ranges[gene][0]+" ,"+gene_ranges[gene][1]+
-              " ,"+gene_ranges[gene][2]+" ,"+gene_ranges[gene][3]+"\n")
+    out.write("#"+gene+" ,"+str(gene_ranges[gene][0])+" ,"+str(gene_ranges[gene][1])+
+              " ,"+str(gene_ranges[gene][2])+" ,"+str(gene_ranges[gene][3])+"\n")
     #Go through events
     for event in inputs:
         "Alternative Donors/Acceptors"

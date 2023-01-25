@@ -41,7 +41,7 @@ Procedure:
     3.
     
 Useage:
-    
+    python variants_in_AS_pipeline/PSI.py -s ../Sample_Data -i new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL
     
 Possible Bugs:
 """
@@ -80,14 +80,64 @@ parser.add_argument('--samples', '-s', required=True,
 parser.add_argument('--input', '-i', required=True,
                     help="Table with all identified AS events, created by Identify_AS.py")
 parser.add_argument('--out', '-o', required=True,
-                    help="""Output folder, containing PSI tables.""")
+                    help="""Output file, containing PSI tables.""")
 parser.add_argument('--InsertSize', '-is', type=str,
                     help="""Average Insert size plus standard deviation. Format
                     'Mean X Standard Deviation Y' """)
+parser.add_argument('--coordinates', '-c', type=str,
+                    help="""Start and stop coordinates of region of interest,
+                    as well as chromosome. Format: chr[]:start-stop""")
+parser.add_argument('--AS', '-as', type=str, required=True,
+                    help="""Which type of alternative splicing event we are
+                    interested in. "CE" for Casette Exons, "AA" for alternative
+                    acceptors, "AD" for alternative donors, "IR" for intron
+                    retention and "ALL" for all of the types. Several seperated
+                    by ,.""")                    
+                    
 
 
 args = parser.parse_args()
 
+# Extract input coordinates, check their format.
+if args.coordinates:
+    if re.search(r'[a-z]{3}[MXY]?\d*:\d+-\d+', args.coordinates):
+        coord = re.search(r'([a-z]{3}[MXY]?\d*):(\d+)-(\d+)', args.coordinates)
+        coord_chrom = coord.group(1)
+        #To adjust for different inclusivity of stop/start for plus and minus strand, expand coordinate range by 1.
+        coord_start = int(coord.group(2))-1
+        coord_stop = int(coord.group(3))+1
+
+    else:
+        raise argparse.ArgumentTypeError("""The given coordinates are in the 
+                                         wrong format. Input as 
+                                         chrX:XXXX-XXXX.""")
+        quit()
+
+
+if args.AS:
+    allowed_inputs=["CE", "AA", "AD", "IR", "ALL"]
+    inputs=args.AS.split(",")
+    inputs=[i.upper() for i in inputs]
+    for i in inputs:
+        if i not in allowed_inputs:
+            raise argparse.ArgumentTypeError("""The allowed abbreviations for
+                                             splicing events are "CE" for 
+                                             Casette Exons, "AA" for 
+                                             alternative
+                                             acceptors, "AD" for alternative 
+                                             donors, "IR" for intron
+                                             retention and "ALL" for all of 
+                                             the types. Several seperated
+                                             by ,.""")
+            quit()
+            
+    #If input is all events, make sure the code runs through all:
+    if inputs[0].upper()=="ALL":
+        inputs=["CE", "AA", "AD", "IR"]
+    #if IR is in the events, but CE is not, then CE still has to run! Because needed for PSI of IR
+    if "IR" in inputs and "CE" not in inputs:
+        print("Casette exons (CE) will also be identified as needed for PSI score calculation of intron retention (IR).")
+        inputs.append("CE")
 
 #If we need to calculate scores for intron retention, we require an average insert size between the reads.
 if args.InsertSize:
@@ -98,99 +148,394 @@ if args.InsertSize:
         raise argparse.ArgumentTypeError("""Insert Sizes are either missing or
                                          of wrong format. Required format is:
                                              'Mean [float] Standard Deviation [float]'""")
-
-#Create output directory if not there already
-if not os.path.exists(args.out):
-    os.makedirs(args.out)
     
 #%% User Defined Functions
 
-def Filter_Reads(read, gene_strand):
-    skip=False
-    #Exclude non-primary alignments
-    if read.is_secondary:
-        skip=True
-    
-    #Exclude reads on wrong strand
-    if read.mate_is_reverse and read.is_read1:
-        read_strand="-"
-    elif read.mate_is_reverse and read.is_read2:
-        read_strand="+"
-    elif read.mate_is_forward and read.is_read1:
-        read_strand="+"
-    elif read.mate_is_forward and read.is_read2:
-        read_strand="-"
-    
-    if read_strand!=gene_strand:
-        skip=True
+def PSI_AA(event, reads):
+    #event: [[chrom, strand, start1 coord], [chrom, strand, start2 coord]...]
+    #Make a list with the starts, extract others.
+    event_strand=event[0][1]
+    starts=[]
+    for i in event:
+        starts.append(int(i[2]))
         
-    return skip
-
-def PSI_CE(sample, CE, gene):
-    """
+    #Sort starts by coordinate.
+    starts=sorted(starts)
     
-
-    Parameters
-    ----------
-    sample : string
-        Sample name
-    exon : list
-        contains chromosome, start, stop, strand information for CE
-
-    Returns
-    -------
-    str
-        PSI score
-
-    """
-    #Needs coordinates for CE
-    chrom=CE[0]
-    start=int(CE[1])
-    stop=int(CE[2])
-    strand=CE[3]                                                                        
-    
-    #Find .bam file corresponding to sample name.
-    for file in bam_file_list:
-        if sample in file:
-            bam_file=file
-            index_file=file[0:-1]+"i"
-            break
-    
-    #We only want to count each read of a read pair once. So we have a list of reads that have already been counted.
-    counted=dict()
+    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
+    counted=[]
     #Note that we prioritize counting spliced reads, so those are checked first.
     
-    #Initialize opening of file
-    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
+    #Spliced Counters
+    spliced_counters=[0]*len(event)
     
-    #For the spliced reads, we need to fetch a bigger region and then recognise the spliced alignments.
-    #We dont want to miss any reads, so we make this region the gene range the exon is in.
-    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][2], gene_ranges[gene][3])
+    #For difference reads after, only keep useable reads.
+    unspliced=[]
+    for read in reads:
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            #If the read start or end is between first and last start coord, then we need it for difference reads.
+            read_start=int(read.reference_start)
+            #Sum all numbers in cigar string for read length
+            read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
+            
+            if read_start >= starts[0] and read_start <=starts[-1]:
+                unspliced.append(read)
+            elif read_start+read_range>=starts[0] and read_start+read_range<=starts[-1]:
+                unspliced.append(read)
+            continue
+        
+        #The rest can be counted for spliced.
+        #Allow for several splice junctions in one read.
+        current_cigar = read.cigarstring
+        current_start = int(read.reference_start)
+        read_name=read.query_name
+        
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            exon1 = int(junction.group(1))
+            intron = int(junction.group(2))
+            exon2 = int(junction.group(3))
+            exon1_start = current_start
+            exon1_end = exon1_start+exon1+1  #exclusive
+            exon2_start = exon1_end+intron -1 #inclusive
+                
+            #skip alignments with less than 3 matching bases in an exon.
+            if exon1<3 or exon2<3:
+                # update cigar string
+                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+                current_start= exon2_start
+                continue
+            
+            #Update counters based on matching starts
+            if event_strand=="+":
+                #Then the AA starts have to match the exon2_starts
+                for i in range(0, len(starts)):
+                    if starts[i]==exon2_start:
+                        if read_name not in counted:
+                            spliced_counters[i]+=1
+                            counted.append(read_name)
+            else:
+                #Then the AA starts have to match the exon1_ends
+                for i in range(0, len(starts)):
+                    #Same as for AD on the plus strand, the exon end has to be adjusted, because we calculate it to be exclusive.
+                    if starts[i]==exon1_end-1:
+                        if read_name not in counted:
+                            spliced_counters[i]+=1
+                            counted.append(read_name)
+                        
+
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= exon2_start
+    
+    #Now we need to still count the unspliced reads in the difference regions
+    difference_counters=[0]*(len(starts)-1)
+    difference_lengths=[] #For normalization
+    difference_coord=[]
+    for i in range(0, len(starts)-1):
+        start1=starts[i]
+        start2=starts[i+1]
+        length=start2-start1 #since they are sorted.
+        difference_lengths.append(length)
+        difference_coord.append([start1, start2])
+    
+    #Now go through reads and count
+    for read in unspliced:
+        read_name=read.query_name
+        #Check if read pair is already counted
+        if read_name in counted:
+            continue
+        
+        #Else check in which difference it is.
+        read_start=int(read.reference_start)
+        #Sum all numbers in cigar string for read length
+        read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
+        #If the read starts or ends within the difference region, count it. 
+        #But we want it to be counted for the most "extreme AA". So the smallest coordinate for + and the biggest for -.
+        #So we go through the difference coordinates based on strand.
+        if event_strand=="-":        
+            for index, difference in enumerate(difference_coord[1::]):
+                if ((read_start>=difference[0] and read_start<=difference[1]) or
+                (read_start+read_range>=difference[0] and read_start+read_range<=difference[1])): 
+                    #count
+                    difference_counters[-(index+1)]+=1
+                    counted.append(read_name)
+        else:
+            #Go forward through the list.
+            for index, difference in enumerate(difference_coord):
+                if ((read_start>=difference[0] and read_start<=difference[1]) or
+                (read_start+read_range>=difference[0] and read_start+read_range<=difference[1])): 
+                    #count
+                    difference_counters[index]+=1
+                    counted.append(read_name)
+    
+    #The difference reads need to be normalized
+    normalized_diff=[]
+    for i in range(0, len(difference_counters)):
+        normalized_diff.append(difference_counters[i]/difference_lengths[i])
+    
+    #Now calculate PSI for all starts with the counts.
+    psi=[]
+    for s in starts:
+        start_number=starts.index(s)
+        if event_strand=="+":
+            if start_number!=0:
+                total_reads=difference_counters[start_number-1]+spliced_counters[start_number]+sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+                #only numerical PSI scores for total reads>10
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=normalized_diff[start_number-1]+spliced_counters[start_number]
+                    ER=sum([x for i,x in enumerate(normalized_diff) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+                    PSI=str(round(IR/(IR+ER), 3))
+            else:
+                total_reads=spliced_counters[start_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=spliced_counters[start_number]
+                    ER= sum(normalized_diff)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
+                    PSI=str(round(IR/(IR+ER), 3))
+        else:
+            if start_number!=(len(starts)-1):
+                total_reads=difference_counters[start_number-1]+spliced_counters[start_number]+sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=normalized_diff[start_number-1]+spliced_counters[start_number]
+                    ER=sum([x for i,x in enumerate(normalized_diff) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
+                    PSI=str(round(IR/(IR+ER), 3))
+            else:
+                total_reads=spliced_counters[start_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=spliced_counters[start_number]
+                    ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
+                    PSI=str(round(IR/(IR+ER), 3))
+        
+        psi.append(PSI)
+    #The psi scores could potentially be in a different order than the starts in the events, since we sorted. So lets fix that.
+    psi_sorted=[""]*len(starts)
+    for s in starts:
+        for i in range(0, len(event)):
+            if str(s) in event[i]:
+                psi_sorted[i]=psi[starts.index(s)]
+                break
+                
+    return psi_sorted
+    
+
+def PSI_AD(event, reads):
+    #event: [[chrom, strand, stop1 coord], [chrom, strand, stop2 coord]...]
+    #Make a list with the stops, extract others.
+    event_strand=event[0][1]
+    stops=[]
+    for i in event:
+        stops.append(int(i[2]))
+    
+    #Sort starts by coordinate.
+    stops=sorted(stops)
+    
+    #We only want to read each read pair once per event. So we have a list
+    counted=[]
+    
+    #Spliced Counters
+    spliced_counters=[0]*len(event)
+    
+    #For difference reads after, only keep useable reads.
+    unspliced=[]
+    for read in reads:
+        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            #If the read start or end is between first and last start coord, then we need it for difference reads.
+            read_start=int(read.reference_start)
+            #Sum all numbers in cigar string for read length
+            read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
+            
+            if read_start >= stops[0] and read_start <=stops[-1]:
+                unspliced.append(read)
+            elif read_start+read_range>=stops[0] and read_start+read_range<=stops[-1]:
+                unspliced.append(read)
+            continue
+        
+        #The rest can be counted for spliced.
+        #Allow for several splice junctions in one read.
+        current_cigar = read.cigarstring
+        current_start = int(read.reference_start)
+        read_name=read.query_name
+        
+        while re.search(r'\d+M\d+N\d+M', current_cigar):
+            #assign splice junction variables
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            exon1 = int(junction.group(1))
+            intron = int(junction.group(2))
+            exon2 = int(junction.group(3))
+            exon1_start = current_start
+            exon1_end = exon1_start+exon1+1  #exclusive
+            exon2_start = exon1_end+intron -1 #inclusive
+                
+            #skip alignments with less than 3 matching bases in an exon.
+            if exon1<3 or exon2<3:
+                # update cigar string
+                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+                current_start= exon2_start
+                continue
+            
+            #Update counters based on matching starts
+            if event_strand=="+":
+                #Then the AD stops have to match the exon1_stops
+                for i in range(0, len(stops)):
+                    #The coordinates on plus strand seem to be shifted for AD, by 1. Because we calculate it to be exclusive.
+                    if str(stops)==str(exon1_end-1):
+                        if read_name not in counted[i]:
+                            spliced_counters[i]+=1
+                            counted.append(read_name)
+                
+            else:
+                #Then the AD starts have to match the exon2_starts
+                for i in range(0, len(stops)):
+                    if str(stops[i])==str(exon2_start):
+                        if read_name not in counted[i]:
+                            spliced_counters[i]+=1
+                            counted.append(read_name)
+            
+            # update cigar string
+            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
+            current_start= exon2_start
+    
+    #Now we need to still count the unspliced reads in the difference regions
+    difference_counters=[0]*(len(stops)-1)
+    difference_lengths=[] #For normalization
+    difference_coord=[]
+    for i in range(0, len(stops)-1):
+        stop1=stops[i]
+        stop2=stops[i+1]
+        length=stop2-stop1 #since they are sorted.
+        difference_lengths.append(length)
+        difference_coord.append([stop1, stop2])
+    
+    #Now go through reads and count
+    for read in unspliced:
+        read_name=read.query_name
+        #Check if read pair is already counted
+        if read_name in counted:
+            continue
+        
+        #Else check in which difference it is.
+        read_start=int(read.reference_start)
+        #Sum all numbers in cigar string for read length
+        read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
+        #If the read starts or ends within the difference region, count it. 
+        #But we want it to be counted for the most "extreme AD". So the biggest coordinate for + and the smallest for -.
+        #So we go through the difference coordinates based on strand.
+        if event_strand=="+":        
+            for index, difference in enumerate(difference_coord[1::]):
+                if ((read_start>=difference[0] and read_start<=difference[1]) or
+                (read_start+read_range>=difference[0] and read_start+read_range<=difference[1])): 
+                    #count
+                    difference_counters[-(index+1)]+=1
+                    counted.append(read_name)
+        else:
+            #Go forward through the list.
+            for index, difference in enumerate(difference_coord):
+                if ((read_start>=difference[0] and read_start<=difference[1]) or
+                (read_start+read_range>=difference[0] and read_start+read_range<=difference[1])): 
+                    #count
+                    difference_counters[index]+=1
+                    counted.append(read_name)
+    
+    #The difference reads need to be normalized
+    normalized_diff=[]
+    for i in range(0, len(difference_counters)):
+        normalized_diff.append(difference_counters[i]/difference_lengths[i])
+    
+    #Now calculate PSI for all starts with the counts.
+    psi=[]
+    for s in stops:
+        stop_number=stops.index(s)
+        if event_strand=="+":
+            if stop_number!=0:
+                total_reads=difference_counters[stop_number-1]+spliced_counters[stop_number]+sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                #only numerical PSI scores for total reads>10
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=normalized_diff[stop_number-1]+spliced_counters[stop_number]
+                    ER=sum([x for i,x in enumerate(normalized_diff) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                    PSI=str(round(IR/(IR+ER), 3))
+            else:
+                total_reads=spliced_counters[stop_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)])
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=spliced_counters[stop_number]
+                    ER= sum(normalized_diff)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                    PSI=str(round(IR/(IR+ER), 3))
+        else:
+            if stop_number!=(len(stops)-1):
+                total_reads=difference_counters[stop_number]+spliced_counters[stop_number]+sum([x for i,x in enumerate(difference_counters) if i!=(stop_number)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=difference_counters[stop_number]+spliced_counters[stop_number]
+                    ER=sum([x for i,x in enumerate(normalized_diff) if i!=(stop_number)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                    PSI=str(round(IR/(IR+ER), 3))
+            else:
+                total_reads=spliced_counters[stop_number]+ sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                if total_reads<=10:
+                    PSI="NAN"
+                else:
+                    IR=spliced_counters[stop_number]
+                    ER= sum(normalized_diff)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
+                    PSI=str(round(IR/(IR+ER), 3))
+        
+        psi.append(PSI)
+        
+    #The psi scores could potentially be in a different order than the starts in the events, since we sorted. So lets fix that.
+    psi_sorted=[""]*len(stops)
+    for s in stops:
+        for i in range(0, len(event)):
+            if str(s) in event[i]:
+                psi_sorted[i]=psi[stops.index(s)]
+                break
+    
+    return psi_sorted
+
+def PSI_CE(event, reads):
+    #Read CE information from event
+    start=int(event[2])
+    stop=int(event[3])
+    #We count spliced reads to the potential CE and spliced reads across the CE.
+    #So we only need spliced reads.
     
     #initialize counters
     counter_left=0
     counter_right=0
     counter_accross=0
-    for read in spliced_reads:
-        #Filter
-        if Filter_Reads(read, strand)==True:
+    #To ensure every read pair only gets counted once, initialize a list where they get saved if counted.
+    counted=[]
+    #To count reads in CE later, save unspliced reads
+    unspliced_reads=[]
+    for read in reads:
+        #filter out not spliced reads
+        if not re.search(r'\d+M\d+N\d+M', read.cigarstring):
+            unspliced_reads.append(read)
             continue
-        #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        #Allow for several splice junctions in one read.
-        current_cigar = read.cigarstring
+        
+        #Allow for several splice junctions in one read!
+        current_cigar=read.cigarstring
         read_start=int(read.reference_start)
-        #sum all numbers in cigar string for read length
+        #Sum all numbers in cigar string for read length
         read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
-        current_start = int(read_start)
-        #Do not process spliced reads in the wrong place.
-        if read_start < start and read_start+read_range < start:
+        current_start=read_start
+        #Do not process reads spliced in the wrong place
+        if read_start<start and read_start+read_range<start:
             continue
-        if read_start > stop and read_start+read_range > stop:
+        if read_start>stop and read_start+read_range>stop:
             continue
         read_name=read.query_name
-    
+        
         while re.search(r'\d+M\d+N\d+M', current_cigar):
             #assign splice junction variables
             junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
@@ -214,727 +559,152 @@ def PSI_CE(sample, CE, gene):
                 #count!
                 if read_name not in counted:
                     counter_left+=1
-                    counted[read_name]="spliced"
+                    counted.append(read_name)
                 else:
-                    if counted[read_name]=="spliced":
-                        #has already been counted. proceed.
-                        pass
-                    else:
-                        #this shouldnt happen....
-                        print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                        pass
+                    pass
             
             #Number of spliced reads from CE to next.   
             elif start <= exon1_start<=stop and exon2_start >stop:
                 #count!
                 if read_name not in counted:
                     counter_right+=1
-                    counted[read_name]="spliced"
+                    counted.append(read_name)
                 else:
-                    if counted[read_name]=="spliced":
-                        #has already been counted. proceed.
-                        pass
-                    else:
-                        #this shouldnt happen....
-                        print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                        pass
+                    pass
                     
             #Number of spliced reads accross CE.
             elif exon1_end<start and exon2_start>stop:
                 #count!
                 if read_name not in counted:
                     counter_accross+=1
-                    counted[read_name]="spliced"
+                    counted.append(read_name)
                 else:
-                    if counted[read_name]=="spliced":
-                        #has already been counted. proceed.
-                        pass
-                    else:
-                        #this shouldnt happen....
-                        print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                        pass
+                    pass
                     
             # update cigar string
             current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
             current_start= exon2_start
-    
-    #C= number of reads within CE.
-    #For this we fetch the part of the alignment file in the exon.
-    exon_reads=samfile.fetch(chrom, start, stop)
-    #The coordinates do not need to be adjusted as pysam uses also start incl and end excl and 0 based.
+            
+    #We also count the names reads in the CE
     counter=0
-    for read in exon_reads:
-        #Filter
-        if Filter_Reads(read, strand)==True:
-            continue
-        #no spliced reads
-        if re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        read_name=read.query_name
-        if read_name not in counted:
-            counted[read_name]="unspliced"
-            #Theres no real problem if both reads are in the CE, but we dont want to count them twice. So the counter is indented.
-            counter+=1
-        else:
-            if counted[read_name]=="spliced":
-                #spliced reads > unspliced reads for counts. So we dont count this one.
-                continue
-            elif counted[read_name]=="unspliced":
-                #We have already counted it. Ignore and proceed.
-                continue
+    for reads in unspliced_reads:
+        read_start=int(read.reference_start)
+        #Sum all numbers in cigar string for read length
+        read_range=sum([int(i) for i in re.findall(r'\d+', read.cigarstring)])
+        if read_start>=start or read_start+read_range <= stop:
+            read_name=read.query_name
+            if read_name not in counted:
+                counter+=1
+                counted.append(read_name)
             else:
-                #this shouldnt happen....
-                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                continue
+                pass
     
-    #counter needs to be normalized with length of the exon.
-    C=counter/(stop-start)
-    
-
+    #the within exon counter has to be normalized to exon size:
+    counter_n=counter/(stop-start)
     #Initialize spliced flag for PSI_CE_dict
+    """
+    #not sure yet if needed, check when you do IR
     if counter_left!=0 or counter_right!=0:
         spliced_flag=True
     else:
         spliced_flag=False
-    
-    IR= counter_left+counter_right+C
+    """
+    IR= counter_left+counter_right+counter_n
     ER= counter_accross
-    if ER+ IR >10:
+    #minus normalized, plus not normalized
+    if ER+ IR-counter_n+counter >10:
         PSI=str(round(IR/(IR+ER),3))
     else:
         PSI="NAN"
-    
-    return [PSI,spliced_flag]
+     
+    return PSI
 
-def PSI_AA(gene, sample, event, start):
+def PSI_IR(event, reads):
+    PSI="NAN"
+    return PSI
+
+
+
+
+def PSI_for_Gene(gene, events, sample):
     """
-    
+    Calculates PSI score for all events in gene and one sample.
 
     Parameters
     ----------
-    sample : string
-        Sample name
-    event : list
-        contains all starts for this particular AA event.
-    start: 
-        start that we currently calculate PSI score for.
-    Returns
-    -------
-    str
-        PSI score
-
-    """
-    #Extract gene information
-    chrom, strand, gene_start, gene_stop=gene_ranges[gene]
-    
-    #Find .bam file corresponding to sample name.
-    for file in bam_file_list:
-        if sample in file:
-            bam_file=file
-            index_file=file[0:-1]+"i"
-            break
-        
-    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
-    counted=dict()
-    for i in range(0, len(event)):
-        counted[i]=dict()
-    #Note that we prioritize counting spliced reads, so those are checked first.
-    
-    #Initialize opening of file
-    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
-    
-    #Count reads
-    #Find total number of spliced reads with coordinates
-    spliced_counters=[0]*len(event)
-    #Open bam file in gene range.
-    spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
-    
-    #Go through reads
-    for read in spliced_reads:
-        #Filter
-        if Filter_Reads(read, strand)==True:
-            continue
-        #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        
-        #Allow for several splice junctions in one read.
-        current_cigar = read.cigarstring
-        current_start = int(read.reference_start)
-        read_name=read.query_name
-        
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
-            #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-            exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
-            exon1_start = current_start
-            exon1_end = exon1_start+exon1+1  #exclusive
-            exon2_start = exon1_end+intron -1 #inclusive
-                
-            #skip alignments with less than 3 matching bases in an exon.
-            if exon1<3 or exon2<3:
-                # update cigar string
-                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-                current_start= exon2_start
-                continue
-            
-            #Update counters based on matching starts
-            if strand=="+":
-                #Then the AA starts have to match the exon2_starts
-                for i in range(0, len(event)):
-                    if event[i]==str(exon2_start):
-                        if read_name not in counted[i]:
-                            spliced_counters[i]+=1
-                            counted[i][read_name]="spliced"
-                        else:
-                            if counted[i][read_name]=="spliced":
-                                #Great its already counted. skip.
-                                pass
-                            else:
-                                #this shouldnt happen....
-                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                                pass
-            else:
-                #Then the AA starts have to match the exon1_ends
-                for i in range(0, len(event)):
-                    #Same as for AD on the plus strand, the exon end has to be adjusted, because we calculate it to be exclusive.
-                    if event[i]==str(exon1_end-1):
-                        if read_name not in counted[i]:
-                            spliced_counters[i]+=1
-                            counted[i][read_name]="spliced"
-                        else:
-                            if counted[i][read_name]=="spliced":
-                                #Great its already counted. skip.
-                                pass
-                            else:
-                                #this shouldnt happen....
-                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                                pass
-
-            # update cigar string
-            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-            current_start= exon2_start
-    
-    #Find difference reads
-    difference_counters=[]
-    difference_lengths=[]
-    for i in range(0, len(event)-1):
-        start1=int(event[i])
-        start2=int(event[i+1])
-        length=max(start1, start2)-min(start1, start2)
-        difference_reads=samfile.fetch(chrom, start1, start2)
-        counter=0
-        
-        #Filter reads
-        for read in difference_reads:
-            #Filter
-            if Filter_Reads(read, strand)==True:
-                continue
-            #no spliced reads
-            if re.search(r'\d+M\d+N\d+M',read.cigarstring):
-                continue
-            
-            #Filter conditions passed:
-            read_name=read.query_name
-            if read_name not in counted[i]:
-                counter+=1
-                counted[i][read_name]="unspliced"
-            else:
-                if counted[i][read_name]== "unspliced":
-                    #no problem. already counted. skip
-                    continue
-                elif counted[i][read_name]=="spliced":
-                    #Takes priority. already counted. skip.
-                    continue
-                else:
-                    #this shouldnt happen....
-                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                    continue
-            
-        #Add difference reads into list
-        difference_counters.append(counter)
-        difference_lengths.append(length)
-    
-    #Note that the first start, on the minus strand, has the highest coordinate.
-    start_number=event.index(start)
-    if start_number!=0 and strand=="+":
-        total_reads=difference_counters[start_number-1]+spliced_counters[start_number]+sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=difference_counters[start_number-1]+spliced_counters[start_number]
-            ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-    elif start_number==0 and strand=="+":
-        total_reads=spliced_counters[start_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=spliced_counters[start_number]
-            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-    elif start_number!=(len(event)-1) and strand=="-":
-        total_reads=difference_counters[start_number-1]+spliced_counters[start_number]+sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=difference_counters[start_number-1]+spliced_counters[start_number]
-            ER=sum([x for i,x in enumerate(difference_counters) if i!=(start_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-    else:
-        total_reads=spliced_counters[start_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)])
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=spliced_counters[start_number]
-            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(start_number)]) 
-    
-    if total_reads >10:
-        PSI=str(round(IR/(IR+ER),3))
-    else:
-        PSI="NAN"
-        
-    return PSI
-
-def PSI_AD(gene, sample, event, stop):
-    """
-    
-    Parameters
-    ----------
-    sample : string
-        Sample name
-    event : list
-        contains all starts for this particular AA event.
-    start: 
-        start that we currently calculate PSI score for.
-    Returns
-    -------
-    str
-        PSI score
-
-    """
-    #Extract gene information
-    chrom, strand, gene_start, gene_stop=gene_ranges[gene]
-    
-    #Find .bam file corresponding to sample name.
-    for file in bam_file_list:
-        if sample in file:
-            bam_file=file
-            index_file=file[0:-1]+"i"
-            break
-    #Initialize opening of file
-    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
-    
-    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
-    counted=dict()
-    for i in range(0, len(event)):
-        counted[i]=dict()
-    #Note that we prioritize counting spliced reads, so those are checked first.
-    
-    #Count reads
-    #Find total number of spliced reads with coordinates
-    spliced_counters=[0]*len(event)
-    #Open bam file in gene range.
-    spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
-    
-    #Go through reads
-    for read in spliced_reads:
-        #Filter
-        if Filter_Reads(read, strand)==True:
-            continue
-        #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        
-        #Allow for several splice junctions in one read.
-        current_cigar = read.cigarstring
-        current_start = int(read.reference_start)
-        read_name=read.query_name
-        
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
-            #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-            exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
-            exon1_start = current_start
-            exon1_end = exon1_start+exon1+1  #exclusive
-            exon2_start = exon1_end+intron -1 #inclusive
-                
-            #skip alignments with less than 3 matching bases in an exon.
-            if exon1<3 or exon2<3:
-                # update cigar string
-                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-                current_start= exon2_start
-                continue
-            
-            #Update counters based on matching starts
-            if strand=="+":
-                #Then the AA starts have to match the exon2_starts
-                for i in range(0, len(event)):
-                    #The coordinates on plus strand seem to be shifted for AD, by 1. Because we calculate it to be exclusive.
-                    if str(event[i])==str(exon1_end-1):
-                        if read_name not in counted[i]:
-                            spliced_counters[i]+=1
-                            counted[i][read_name]="spliced"
-                        else:
-                            if counted[i][read_name]=="spliced":
-                                #Great its already counted. skip.
-                                pass
-                            else:
-                                #this shouldnt happen....
-                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                                pass
-            else:
-                #Then the AA starts have to match the exon1_ends
-                for i in range(0, len(event)):
-                    if str(event[i])==str(exon2_start):
-                        if read_name not in counted[i]:
-                            spliced_counters[i]+=1
-                            counted[i][read_name]="spliced"
-                        else:
-                            if counted[i][read_name]=="spliced":
-                                #Great its already counted. skip.
-                                pass
-                            else:
-                                #this shouldnt happen....
-                                print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                                pass
-            
-            # update cigar string
-            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-            current_start= exon2_start
-    
-    #Find difference reads
-    difference_counters=[]
-    difference_lengths=[]
-    for i in range(0, len(event)-1):
-        stop1=int(event[i])
-        stop2=int(event[i+1])
-        length=max(stop1,stop2)-min(stop1,stop2)
-        difference_reads=samfile.fetch(chrom, stop1, stop2)
-        counter=0
-        
-        #Filter reads
-        for read in difference_reads:
-            #Filter
-            if Filter_Reads(read, strand)==True:
-                continue
-            #no spliced reads
-            if re.search(r'\d+M\d+N\d+M',read.cigarstring):
-                continue
-            
-            #Filter conditions passed:
-            read_name=read.query_name
-            if read_name not in counted[i]:
-                counter+=1
-                counted[i][read_name]="unspliced"
-            else:
-                if counted[i][read_name]== "unspliced":
-                    #no problem. already counted. skip
-                    continue
-                elif counted[i][read_name]=="spliced":
-                    #Takes priority. already counted. skip.
-                    continue
-                else:
-                    #this shouldnt happen....
-                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                    continue
-        
-        #Add difference reads into list
-        difference_counters.append(counter)
-        difference_lengths.append(length)
-        
-    #Note that the first start, on the minus strand, has the highest coordinate.
-    stop_number=event.index(stop)
-    if stop_number!=0 and strand=="+":
-        total_reads=difference_counters[stop_number-1]+spliced_counters[stop_number]+sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=difference_counters[stop_number-1]+spliced_counters[stop_number]
-            ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number-1)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-            
-    elif stop_number==0 and strand=="+":
-        total_reads=spliced_counters[stop_number]+sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=spliced_counters[stop_number]
-            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-    elif stop_number!=(len(event)-1) and strand=="-":
-        total_reads=difference_counters[stop_number]+spliced_counters[stop_number]+sum([x for i,x in enumerate(difference_counters) if i!=(stop_number)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=difference_counters[stop_number]+spliced_counters[stop_number]
-            ER=sum([x for i,x in enumerate(difference_counters) if i!=(stop_number)])+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-    else:
-        total_reads=spliced_counters[stop_number]+ sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-        if total_reads>10:
-            #Then calculate PSI
-            for i, x in enumerate(difference_counters):
-                difference_counters[i]=x/difference_lengths[i]
-            IR=spliced_counters[stop_number]
-            ER= sum(difference_counters)+sum([x for i,x in enumerate(spliced_counters) if i!=(stop_number)]) 
-    
-    if total_reads>10:
-        PSI=str(round(IR/(IR+ER),3))
-    else:
-        PSI="NAN"
-
-    return PSI
-    
-def PSI_IR(sample, entry, gene):
-    """
-
-    Parameters
-    ----------
-    sample : string
-        Sample name
-    entry: string separated by _
-        contains strand, chromosome, exon1stop, exon2start
+    gene : TYPE
+        DESCRIPTION.
+    events : TYPE
+        DESCRIPTION.
+    sample : TYPE
+        DESCRIPTION.
 
     Returns
     -------
-    str
-        PSI score
+    None.
 
     """
-    strand, chrom, exon1stop, exon2start=entry.split("_")
-    exon1stop=int(exon1stop)
-    exon2start=int(exon2start)
-    #Find .bam file corresponding to sample name.
-    for file in bam_file_list:
-        if sample in file:
-            bam_file=file
+    #Open bam file for this sample and extract reads for this gene
+    for bam in bam_file_list:
+        if sample in bam:
+            file=bam
             index_file=file[0:-1]+"i"
             break
-    
-    #Check: If there is a CE in the IR we need to check its PSI score
-    for gene in PSI_CE_dict:
-        #Extract start and stop
-        for entry in PSI_CE_dict[gene]:
-            CE_start=int(entry.split("_")[1])
-            CE_stop=int(entry.split("_")[2])
-            #Check if within intron
-            if CE_start>exon1stop and CE_stop<exon2start:
-                #Then we check PSI
-                CE_PSI=PSI_CE_dict[gene][entry][sample][0]
-                spliced_flag=PSI_CE_dict[gene][entry][sample][1]
-                
-                #If this PSI=1 and spliced_flag=True, then theres no evidence for intron retention
-                if CE_PSI=="1.0" and spliced_flag==True:
-                    #print("It happend for "+ sample+ " CE coordinates: "+ str(CE_start)+", "+ str(CE_stop)+" IR coordinates: "+ str(exon1stop)+", "+ str(exon2start))
-                    PSI="NAN"
-                    return PSI
-                    
-    #Insert read confidence interval
-    insert_confidence=[insert_mean-1.96*(insert_sd/math.sqrt(len(sample_names))),insert_mean+1.96*(insert_sd/math.sqrt(len(sample_names)))]
-    
-    #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
-    counted=dict()
-    #Note that we prioritize counting spliced reads, so those are checked first.
+    #Get gene coordinates from current_gene
+    chrom=current_gene[1]
+    start=int(current_gene[3])
+    stop=int(current_gene[4])
     
     #Initialize opening of file
-    samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
-    
-    #Get Spliced Reads
-    #Open bam file in gene range.
-    spliced_reads=samfile.fetch(chrom, gene_ranges[gene][2], gene_ranges[gene][3])
-    
-    spliced_counter=0
-    for read in spliced_reads:
-        #Filter
-        if Filter_Reads(read, strand)==True:
+    samfile=pysam.AlignmentFile(file, 'rb', index_filename=index_file)
+    #fetch reads
+    all_reads=samfile.fetch(chrom, start, stop)
+    #Filter reads
+    filtered_reads=[]
+    for read in all_reads:
+        #Exclude non-primary alignments
+        if read.is_secondary:
             continue
-        #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+        
+        #Exclude reads on wrong strand
+        if read.mate_is_reverse and read.is_read1:
+            read_strand="-"
+        elif read.mate_is_reverse and read.is_read2:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read1:
+            read_strand="+"
+        elif read.mate_is_forward and read.is_read2:
+            read_strand="-"
+        
+        if read_strand!=current_gene[2]:
             continue
+        
+        filtered_reads.append(read)
 
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        read_name=read.query_name
-        #Allow for several splice junctions in one read.
-        current_cigar = read.cigarstring
-        current_start = int(read_start)
-        
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
-            #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
-            exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
-            exon1_start = current_start
-            exon1_end = exon1_start+exon1+1  #exclusive
-            exon2_start = exon1_end+intron -1 #inclusive
-                
-            #skip alignments with less than 3 matching bases in an exon.
-            if exon1<3 or exon2<3:
-                # update cigar string
-                current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-                current_start= exon2_start
-                continue
-            
-            if strand=="+":
-                if exon1_end<=exon1stop and exon2_start>=exon2start:
-                    if read_name not in counted:
-                        spliced_counter+=1
-                        counted[read_name]="spliced"
-                    else:
-                        if counted[read_name]=="spliced":
-                            #already counted. no need to double up.
-                            pass
-                        elif counted[read_name]=="left" or counted[read_name]=="right":
-                            #this shouldnt happen....
-                            print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                            pass
-            
-            else:
-                if exon1_end<=exon1stop and exon2_start>=exon2start:
-                    if read_name not in counted:
-                        spliced_counter+=1
-                        counted[read_name]="spliced"
-                    else:
-                        if counted[read_name]=="spliced":
-                            #already counted. no need to double up.
-                            pass
-                        elif counted[read_name]=="left" or counted[read_name]=="right":
-                            #this shouldnt happen....
-                            print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                            pass
-            
-            # update cigar string
-            current_cigar = re.sub(r'^.*?N', 'N', current_cigar).lstrip("N")
-            current_start= exon2_start
+    #Iterate through event types, as they require different calculations.
+    psi_scores=[]
     
-    #Get Overlapping Reads
-    #Fetch reads in gene, since we want them to overlap with beginning or end or IR, the reads cant be too far away from our coordinates.
-    #so we use a generous range of pm 300.
-    reads_genome=samfile.fetch(chrom,exon1stop-300, exon2start+300)
-    overlap_counter=0
-
-    #Only keep IR which have overlapping reads on both sides.
-    left=False
-    right=False
-    for read in reads_genome:
-        #Filter
-        if Filter_Reads(read, strand)==True:
-            continue
-        #no spliced reads
-        if re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
-        
-        #if distance between reads too far, then this is a sign that the second read is in an exon and in between is a break. So no IR.
-        if read.tlen>insert_confidence[1]:
-            continue
-        
-        read_name=read.query_name
-        read_start=int(read.reference_start)
-        read_length=int(read.infer_query_length())
-        #check coordinates, if they overlap the exon1end or the exon2start, it could be an overlap read.
-        parts=re.search(r'((?:\d+[I,D,S,H])?)((?:\d+M)*)((?:\d+[I,D,S,H])?)((?:\d+M)?)((?:\d+[I,D,S,H])?)',read.cigarstring)
-        #5 groups: first one before match, second match, third one in between matches, fourth one match, 5th following match.
-        match_length=0
-        after_match=0
-        before_match=0
-        read_stop=read_start+read_length
-        #remove unaligned parts before match
-        if parts.group(1):
-            before_match=int(re.sub('[IDSH]', '', parts.group(1)))
-        read_start=read_start+before_match
-        
-        #match group
-        if parts.group(2):
-            #add to match length
-            match_length+=int(parts.group(2).strip("M"))
-        
-        #Potential part between matches:
-        if parts.group(3):
-            #Is last group if there is only one M, and middle if theres 2.
-            if parts.group(4):
-                #Different behavior for S, D, and I
-                if re.search(r'[SI]', parts.group(3)):
-                    #add to match length
-                    match_length+=int(re.sub('[IDSH]', '', parts.group(3)))
-                    #D does not get added, as it shortens the query.
+    for AS in events:
+        for event in events[AS]:
+            if AS=="AA":
+                #There is several starts for each AA, so there will be several PSI
+                PSI=PSI_AA(events[AS][event], filtered_reads)
+                for i in PSI:
+                    psi_scores.append(i)
+            elif AS=="AD":
+                PSI=PSI_AD(events[AS][event], filtered_reads)
+                for i in PSI:
+                    psi_scores.append(i)
+            elif AS=="CE":
+                PSI=PSI_CE(event, filtered_reads)
+                psi_scores.append(PSI)
             else:
-                after_match=int(re.sub('[IDSH]', '', parts.group(3)))
-        
-        #Potential second match group
-        if parts.group(4):
-            #Add to match length
-            match_length+=int(parts.group(4).strip("M"))
-        
-        #remove unaligned parts after match
-        if parts.group(5):
-            after_match=int(re.sub('[IDSH]', '', parts.group(5)))
-        read_stop=read_stop-after_match
-        
-        #matching parts coordinates
-        if read_stop-read_start!=match_length:
-            print("Error calculating: ",read_stop-read_start, match_length, read.cigarstring)
-            print(parts.group(1),parts.group(2),parts.group(3),parts.group(4),parts.group(5))
-            quit()
-        
-
-        #Find the overlapping ones left side
-        if read_start<=exon1stop and read_stop>exon1stop:
-            if read_name not in counted:
-                counted[read_name]="left"
-                overlap_counter+=1
-                left=True
-            else:
-                if counted[read_name]=="left":
-                    #already counted. but we need a flag from left or right.
-                    #flag already set if left, so we can leave it.
-                    continue
-                elif counted[read_name]=="right":
-                    #Already counted, but we need to set the flag.
-                    left=True
-                elif counted[read_name]=="spliced":
-                    #This should not happen, as the reads in a pair cannot pick up 2 versions of one event.
-                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                    continue
-        #right side
-        elif read_start<exon2start and read_stop>=exon2start:
-            if read_name not in counted:
-                counted[read_name]="right"
-                overlap_counter+=1
-                right=True
-            else:
-                if counted[read_name]=="right":
-                    #already counted. but we need a flag from left or right.
-                    #flag already set if left, so we can leave it.
-                    continue
-                elif counted[read_name]=="left":
-                    #Already counted, but we need to set the flag.
-                    right=True
-                elif counted[read_name]=="spliced":
-                    #This should not happen, as the reads in a pair cannot pick up 2 versions of one event.
-                    print("Theres a bug in your code. check line ", getframeinfo(currentframe()).lineno)
-                    continue
+                PSI=PSI_IR(event, filtered_reads)
+                psi_scores.append(PSI)
+    return psi_scores
     
-    #If either side has no overlapping reads, then the PSI score will be NAN and the spliced reads do not need to be counted.
-    if left==False or right==False:
-        PSI="NAN"
-        return PSI
     
-    #Calculate PSI
-    IR=overlap_counter
-    ER=spliced_counter
-    if IR+ER<=10:
-        PSI="NAN"
-    else:
-        PSI=str(round(IR/(IR+ER),2))
 
-    return PSI
 
 #%% Find all samples and their alignment files
 
@@ -947,61 +717,138 @@ sample_names=[i.split("/")[-4] for i in bam_file_list]
 
 #%% Score Splicing events
 
+#Open output file
+out=open(args.out, "w")
+out.write("Location\t"+"\t".join(sample_names)+"\n")
+
+current_gene=""
+#For genes not within the input range, we have a flag
+wrong_range=False
 #Open input file
 with open(args.input,"r") as infile:
     for line in infile:
+        if line.startswith("Location"):
+            #Thats the file header. Ignore
+            continue
         #Find gene headers
         if line.startswith("#"):
-            current_gene=line.strip("\n").split(",")
+            #Check if there is previous gene:
+            if current_gene=="":
+                current_gene=[e.strip(" ") for e in line.strip("\n").split(",")]
+                #Check if new gene in input range
+                if args.coordinates:
+                    if current_gene[1]!= coord_chrom:
+                        wrong_range=True
+                    elif int(current_gene[3])>coord_stop or int(current_gene[4])<coord_start:
+                        wrong_range=True
+                    else:
+                        wrong_range=False
+                events={"AA":{}, "AD":{}, "CE":[], "IR":[]}
+                infostrings=[]
+                
+            
+            #We have encountered the next gene! Process all events of previous gene.
+            #If we have a previous gene that is outside of range, then we only reset.
+            elif wrong_range==True:
+                #Reset events and current gene
+                #list of gene information: gene name, chrom, strand, min, max
+                current_gene=[e.strip(" ") for e in line.strip("\n").split(",")]
+                #Check if new gene in input range
+                if args.coordinates:
+                    if current_gene[1]!= coord_chrom:
+                        wrong_range=True
+                    elif int(current_gene[3])>coord_stop or int(current_gene[4])<coord_start:
+                        wrong_range=True
+                    else:
+                        wrong_range=False
+                events={"AA":{}, "AD":{}, "CE":[], "IR":[]}
+                infostrings=[]
+            
+            else:
+                #"Go through samples, extract reads, loop through events, do PSI"
+                scores=dict()
+                for sample in sample_names:
+                    PSI_scores=PSI_for_Gene(current_gene, events, sample)
+                    scores[sample]=PSI_scores
+                #Write into output file, separately for each AS
+                #Can merge them later, but it results in smaller files that way.
+                for i in range(0, len(infostrings)):
+                    
+                    newline=infostrings[i]
+                    for sample in scores:
+                        
+                        newline+="\t"+scores[sample][i]
+                    out.write(newline+"\n")     
+                    
+                #Reset events and current gene
+                #list of gene information: gene name, chrom, strand, min, max
+                current_gene=[e.strip(" ") for e in line.strip("\n").split(",")]
+                events={"AA":{}, "AD":{}, "CE":[], "IR":[]}
+                infostrings=[]
+            
         #If there is no header, it is an AS event entry
         #These are sorted by alphabet. So it is always AA, AD, CE, IR
         else:
+            #If we are in the wrong range, dont save elements
+            if wrong_range==True:
+                continue
+            #Extract all events for this gene
+            infostrings.append(line.split("\t")[0])
+            info=line.split("\t")[0].split("_")
+            current_AS=line.strip("\n").split("\t")[2].strip(" ")
             
+            #Different ways of saving them for different AS. First AA.
+            if current_AS=="AA":
+                #check if this is an AS event of interest
+                if "AA" not in inputs:
+                    continue
+                
+                #1.column has format eventnumber, chrom, strand, start coord exon 2
+                #events for AA will be eventnumber: [chrom, strand, startcoord]
+                if info[0] not in events["AA"]:
+                    events["AA"][info[0]]=[info[1:]]
+                else:
+                    events["AA"][info[0]].append(info[1:])
+                
+            #AD
+            elif current_AS=="AD":
+                #check if this is an AS event of interest
+                if "AD" not in inputs:
+                    continue
+                
+                #1.column has format eventnumber, chrom, strand, stopcoord exon 1
+                #events for AD will be eventnumber: [chrom, strand, stopcoord]
+                if info[0] not in events["AD"]:
+                    events["AD"][info[0]]=[info[1:]]
+                else:
+                    events["AD"][info[0]].append(info[1:])
+            
+            #CE
+            elif current_AS=="CE":
+                #check if this is an AS event of interest
+                if "CE" not in inputs:
+                    continue
+                
+                #1. column has format: chrom, strand, exonstart, exonend
+                #Save to list
+                events["CE"].append(info)
+            
+            #IR
+            elif current_AS == "IR":
+                #check if this is an AS event of interest
+                if "IR" not in inputs:
+                    continue
+                
+                #1. column has format: chrom, strand, intronstart, intronend
+                #Save to list
+                events["IR"].append(info)
+                
+
+out.close()
 
 
 
+#%% End time
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+print("Run time: {:.2f} seconds.".format(time.time()-start_time))  
 
