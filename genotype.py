@@ -155,6 +155,7 @@ genes=list(gene_ranges.keys())
 #Iterate through lines in location table as well as genes simultaneously..
 for line in locations:
     if line.startswith("#"):
+        genotypes.write(line)
         continue
     if line.startswith("Location"):
         #Thats the column names. We write those and extract sample names.
@@ -195,8 +196,10 @@ for line in locations:
             if sample not in fpkm:
                 fpkm[sample]=="NE"
         continue
-    #Now all that is left is entries. shape: chr_position\t samples
-    variant_chrom,variant_position = line.split("\t")[0].split("_")
+    #Now all that is left is entries. shape: chr_position_ref_(alt)\t samples
+    variant_chrom,variant_position = line.split("\t")[0].split("_")[0:2]
+    #infostring to use in first column of output.
+    infostring=line.split("\t")[0]
     entries=line.strip("\n").split("\t")[1:]
     
     #print(current_gene)
@@ -277,7 +280,7 @@ for line in locations:
             #do not go to next line, as we did not find the variants location in regards to the gene.
     
     #Now that we have replaced all "-" in the line, we write the line out to the output file.
-    genotypes.write(variant_chrom+"_"+variant_position+"\t"+"\t".join(entries)+"\n")
+    genotypes.write(infostring+"\t"+"\t".join(entries)+"\n")
 
 
 #%% Close location file and output file.

@@ -80,7 +80,7 @@ if args.coordinates:
                                          chrX:XXXX-XXXX.""")
         quit()
 
-
+""" Not useful for batch runs
 #Check if output file already exists.
 while True:
     if os.path.isfile(args.out):
@@ -99,7 +99,7 @@ while True:
     else:
         #There is no problem with this output file name. We proceed with the code.
         break
-
+"""
 #%% Read vcf file
 
 #Find all the vcf files in the data folder.
@@ -113,7 +113,8 @@ if len(vcf_file_list)==0:
           subfolder of the input folder.""")
     quit()
 
-#Initialize dictionary
+
+#Initialize dictionaries
 variants=dict()
 #Sample list
 sample_names=[]
@@ -134,6 +135,9 @@ for file in vcf_file_list:
             continue
         chrom, position, ID, ref, alt, qual, filt, info, form, sample =line.split("\t")
         genotype=sample.split(":")[-7].strip(" ")
+        #We only want single point mutations
+        if len(alt)>1 or len(ref)>1:
+            continue
         
         #If coordinates or name are given, restrict area of variants.
         if args.coordinates:
@@ -144,10 +148,15 @@ for file in vcf_file_list:
                     continue
         "Before filtering, add all variants to genotype table."
         variant_ID=chrom+"_"+position
+        #add to variant dict
         if variant_ID not in variants:
             variants[variant_ID]=dict()
-            
-        variants[variant_ID][sample_name]=[chrom, position, "ND"]
+
+        if sample_name not in variants[variant_ID]:
+            variants[variant_ID][sample_name]=[ref, {alt:"ND"}]
+        
+        if alt not in variants[variant_ID][sample_name][1]:
+            variants[variant_ID][sample_name][1][alt]="ND"
         
         "Now filter the entries."
         #Keep values with MSI<7
@@ -195,14 +204,14 @@ for file in vcf_file_list:
         if re.search(r"ucsc_rep=([a-z]+);", info):
             #if re.search(r"ucsc_rep=([a-z]+);", info).group(1)=="segdup":
             continue
-        
+
         if genotype=="0/1" or genotype=="1/0":    
-            variants[variant_ID][sample_name][2]= "0/1"
+            variants[variant_ID][sample_name][1][alt]="0/1"
         elif genotype=="1/1":
-            variants[variant_ID][sample_name][2]= "1/1"
+            variants[variant_ID][sample_name][1][alt]="1/1"
         #although it should not happen....  But it clearly is.
         elif genotype=="0/0":
-            variants[variant_ID][sample_name][2]= "0/0"
+            variants[variant_ID][sample_name][1][alt]="0/0"
         else:
             print("Invalid genotype ", genotype)
     
@@ -220,6 +229,7 @@ sample_names=sorted(sample_names)
 #%% Write output file
 
 counter=0
+invalid_counter=0
 percentage=100*counter/len(list(variants.keys()))
 print("Writing Location Table: {:.2f}%".format(percentage),end="\r")
 
@@ -229,18 +239,89 @@ with open(args.out, "w") as out:
         out.write("#Variant Location Table for variants in range "+ args.coordinates + "\n")
     else:
         out.write("#Variant Location Table for variants in whole genome.\n")
+    out.write("#Identifiers in first column in format chr_position_reference nucleotide_(alternative nucleotide(s))\n")
+    out.write("#\n#Genotype Identifiers:\n#  0/0 = Homozygous Reference Allele\n#  0/1 = Heterozgyous Alternative Allele\n#  1/1 = Homozygous Alternative Allele\n")
     out.write("Location\t"+"\t".join(sample_names)+"\n")
     
     for variant in variants:
-        #Starting string for file:
-        new_line=[variant]
+        invalid_variant=False
+        #Starting string for file: want variant_ID, ref and alt in info
+        #Check if ref the same for all samples. otherwise exclude variant
+        ref_list=[]
+        for sample in variants[variant]:
+            if variants[variant][sample][0] not in ref_list:
+                ref_list.append(variants[variant][sample][0])
+        if len(ref_list)!=1:
+            continue
+        
+        #Otherwise we analyse the alternative nucleotide(s) and their genotype
+        #Check how many alts we have
+        alt_bases=[]
+        for sample in variants[variant]:
+            for alt in variants[variant][sample][1]:
+                if alt not in alt_bases:
+                    alt_bases.append(alt)
+        #Now write the whole thing.
+        new_line=[variant+ "_"+ ref_list[0]+"_("+"_".join(alt_bases)+")"]
         #Go through sorted samples, to always have the same order.
         for sample in sample_names:
             if sample in variants[variant]:
-                new_line.append(variants[variant][sample][2])
+                #check what genotype to append
+                #Iterate through alt bases
+                genotype_changed=False
+                #if length of alternative alleles for one sample is 1, then we can just read them off
+                if len(list(variants[variant][sample][1].keys()))==1:
+                    for alt in variants[variant][sample][1]:
+                        #According to genotype
+                        if variants[variant][sample][1][alt]=="ND":
+                            genotype="ND"
+                        if variants[variant][sample][1][alt]=="0/0":
+                            genotype="0/0"
+                        elif variants[variant][sample][1][alt]=="0/1":
+                            genotype="0/"+str(alt_bases.index(alt)+1)
+                        elif variants[variant][sample][1][alt]=="1/1":
+                            genotype=str(alt_bases.index(alt)+1)+"/"+str(alt_bases.index(alt)+1)
+
+                        new_line.append(genotype)
+                #If length is 2, then we need to  merge them.
+                elif len(list(variants[variant][sample][1].keys()))==2:
+                    
+                    g1, g2= variants[variant][sample][1].values()
+                    a1, a2= variants[variant][sample][1].keys()
+                    #the same and homozygous reference
+                    if g1==g2 and g1=="0/0":
+                        genotype="0/0"
+                    #not the same but genotype 1 is 0/0
+                    elif g1=="0/0":
+                        genotype="0/"+str(alt_bases.index(a2+1))
+                    #same but for genotype 2
+                    elif g2=="0/0":
+                        genotype="0/"+str(alt_bases.index(a1+1))
+                    elif g1=="ND" and g2=="ND":
+                        genotype="ND"
+                    elif g1=="ND":
+                        genotype=g2
+                    elif g2=="ND":
+                        genotype=g1
+                    #Now if both are 0/1 or 1/1 (which is also nonsense...)
+                    else:
+                        str(alt_bases.index(a1)+1)+"/"+str(alt_bases.index(a2)+1)
+                    new_line.append(genotype)
+
+                #if length is 3 or more, then i dont understand biology... that shouldnt happen. so we just print an error.
+                
+                elif len(list(variants[variant][sample][1].keys()))>2:
+                    #print("3 alternative alleles for one sample and posiiton. That makes no sense. This is variant " +variant+ " and sample " + sample +"\n The alt bases are ", list(variants[variant][sample][1].keys())  )
+                    genotype="ND"
+                
             else:
                 #Put a spaceholder. Genotype will be determined using gene expression data by next script in pipeline.
                 new_line.append("-")
+        #Skip to new variant if there is 3 or more alleles.        
+        if invalid_variant==True:
+            counter+=1
+            continue
+        
         out.write("\t".join(new_line)+"\n")
         counter+=1
         percentage=100*counter/len(list(variants.keys()))
@@ -248,7 +329,6 @@ with open(args.out, "w") as out:
 
 print("Writing Location Table: Done          \n",end="\r")
         
-
 
 #%% Stop Timer
 
