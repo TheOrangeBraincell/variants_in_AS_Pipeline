@@ -174,16 +174,16 @@ def add_to(events):
             #Go through previous entries in potential_AA to make sure theres no duplicates.
             event_exists=False
             for events in potential_AA:
-                if start1 in events and start2 not in events:
-                    events.append(start2)
+                if start1 in events[0] and start2 not in events[0]:
+                    events[0].append(start2)
                     event_exists=True
                 elif start2 in events and start1 not in events:
-                    events.append(start1)
+                    events[0].append(start1)
                     event_exists=True
             
             #If the event is not found, make a new one.
             if event_exists==False:
-                potential_AA.append([int(start1), int(start2)])
+                potential_AA.append([[int(start1), int(start2)], entry[-2], entry[-1]])
         
             
         if e=="AD":
@@ -202,18 +202,18 @@ def add_to(events):
             #Go through previous entries in potential_AA to make sure theres no duplicates.
             event_exists=False
             for events in potential_AD:
-                if stop1 in events and stop2 not in events:
-                    events.append(stop2)
+                if stop1 in events[0] and stop2 not in events[0]:
+                    events[0].append(stop2)
                     event_exists=True
-                elif stop2 in events and stop1 not in events:
-                    events.append(stop1)
+                elif stop2 in events[0] and stop1 not in events[0]:
+                    events[0].append(stop1)
                     event_exists=True
-                elif stop1 in events and stop2 in events:
+                elif stop1 in events[0] and stop2 in events[0]:
                     event_exists=True
                     
             #If the event is not found, make a new one.
             if event_exists==False:
-                potential_AD.append([stop1, stop2])
+                potential_AD.append([[stop1, stop2], entry[-2], entry[-1]])
 
         
 
@@ -309,7 +309,7 @@ for gene in gene_dict:
 #%% Identify alternative splicing events
 
 out=open(args.out,"w")
-out.write("Location\tAS_Type\n")
+out.write("Location\tAS_Type\tGene_Name\tDatabase\tGencode_Transcript_IDs\tRefseq_Transcript_IDs\n")
 
 #initiate progress counter
 total_count=len(list(gene_ranges.keys()))*len(inputs)
@@ -325,16 +325,39 @@ for gene in gene_dict:
     for event in inputs:
         "Alternative Donors/Acceptors"
         if event.upper()=="AD" or event.upper()=="AA":
+            
             #Remove transcript ids and duplicate exons.
             if gene_dict[gene]:
                 #list of exons for current gene
                 gene_exons=[]
                 for trans_ID in gene_dict[gene]:
                     for exon in gene_dict[gene][trans_ID]:
-                        if exon[0:-1] not in gene_exons:
+                        #Update exon information by adding trans_ID
+                        exon.append(trans_ID)
+                        #exon is now: [chrom, small, big, strand, position, db, transid]
+                        #Because db and transid info wont match necessarily, we only check for up to -2
+                        no_match=True
+                        for entry in gene_exons:
+                            #print(exon[0:-2], entry[0:-2])
+                            if exon[0:-2] == entry[0:-2]:
+                                no_match=False
+                                #if its already there, update db and Transcript ID
+                                #add transcript id (which should be different but just in case)
+                                if exon[-2] not in entry[-1]:
+                                    entry[-1][exon[-2]]=[exon[-1]]
+                                #update db according to whether this one is included already.
+                                #The if statement will catch it only if its the opposite database by itself at this point in the entry.
+                                if exon[-2] not in entry[-2]:
+                                    entry[-2]=entry[-2]+exon[-2]
+                        #If there was no match found, then we have a completely new exon and append it to gene_exons
+                        if no_match==True:
+                            print(exon)
                             gene_exons.append(exon[0:-1])
-            
-            
+                            #print(exon[-2])
+                            if exon[-2]=="G":
+                                gene_exons[-1][-1]={exon[-2]:exon[-1], "R":"-"}
+                            elif exon[-2]=="R":
+                                gene_exons[-1][-1]={exon[-2]:exon[-1], "R":"-"}
             #Go through all exons per gene to find alternative donors/acceptors.
             #Initiate potential AA/AD for each gene.
             potential_AA=[]
@@ -400,16 +423,16 @@ for gene in gene_dict:
                 #Sort entries after location and coordinates
                 for aa_event in potential_AA:
                     aa_event.sort()
-                potential_AA.sort(key=lambda x: int(x[0]))
+                potential_AA.sort(key=lambda x: int(x[0][0]))
                 
                 #numerate events
                 event_ID=0
                 for aa_event in potential_AA:
                     event_ID+=1
-                    for starts in aa_event:
-                        out.write("{}_{}_{}_{}\t{}\t{}\n".format(event_ID, gene_ranges[gene][0],
+                    for starts in aa_event[0]:
+                        out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(event_ID, gene_ranges[gene][0],
                                                              gene_ranges[gene][1],
-                                                             starts, gene, "AA"))
+                                                             starts, "AA", gene, aa_event[1], aa_event[2]["G"], aa_event[2]["R"]))
                 if args.bed==True:
                     bed=open(args.out+"AA.bed", "w")
                     if len(potential_AA)!=0:
@@ -427,17 +450,18 @@ for gene in gene_dict:
             elif event=="AD":
                 #Sort entries after location and coordinates
                 for ad_event in potential_AD:
-                    ad_event.sort()
-                potential_AD.sort(key=lambda x: int(x[0]))
+                    ad_event[0].sort()
+                potential_AD.sort(key=lambda x: int(x[0][0]))
                 
                 #numerate events
                 event_ID=0
                 for ad_event in potential_AD:
                     event_ID+=1
-                    for stops in ad_event:
-                        out.write("{}_{}_{}_{}\t{}\t{}\n".format(event_ID, gene_ranges[gene][0],
+                    print(ad_event)
+                    for stops in ad_event[0]:
+                        out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(event_ID, gene_ranges[gene][0],
                                                              gene_ranges[gene][1],
-                                                             stops, gene, "AD"))
+                                                             stops, "AD", gene, ad_event[1], ad_event[2]["G"], ad_event[2]["R"]))
                 if args.bed==True:
                     bed=open(args.out+"AD.bed", "w")
                     if len(potential_AD)!=0:
@@ -463,15 +487,32 @@ for gene in gene_dict:
                     continue
                 for exon in gene_dict[gene][trans_ID]:
                     if exon[4]=="middle":
-                        #We no longer require transcript ID, db or position information
-                        if exon[0:-2] not in CE_exons:
-                            CE_exons.append(exon[0:-2])
+                        #Check if they are already in CE exons
+                        no_match=True
+                        for entry in CE_exons:
+                            if exon[0:-2] == entry[0:-2]:
+                                no_match=False
+                                #if its already there, update db and Transcript ID
+                                #add transcript id (which should be different but just in case)
+                                if exon[-2] not in entry[-1]:
+                                    entry[-1][exon[-2]]=[exon[-1]]
+                                else:
+                                    entry[-1][exon[-2]].append(exon[-1])
+                                #update db according to whether this one is included already.
+                                #The if statement will catch it only if its the opposite database by itself at this point in the entry.
+                                if exon[-2] not in entry[-2]:
+                                    entry[-2]=entry[-2]+exon[-2]
+                        #If there was no match found, then we have a completely new exon and append it to gene_exons
+                        if no_match==True:
+                            CE_exons.append(exon[0:-1].append(dict))
+                            CE_exons[-1][-1][exon[-2]]=exon[-1]
+                        
             #Sort exons after start coordinate
             CE_exons.sort(key=lambda x: int(x[1]))
             #Write potential CE into output for this gene.
             for exon in CE_exons:
-                out.write("{}_{}_{}_{}\t{}\t{}\n".format(exon[0], exon[3],
-                                              exon[1], exon[2], gene, "CE"))
+                out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(exon[0], exon[3],
+                                              exon[1], exon[2], "CE", gene, exon[-2], exon[-1]["G"], exon[-1]["R"]))
             #If bed file wanted
             if args.bed==True:
                 bed=open(args.out+"CE.bed", "w")
@@ -492,14 +533,34 @@ for gene in gene_dict:
                 for i in range(0, len(gene_dict[gene][trans_ID])-1):
                     chrom=gene_dict[gene][trans_ID][i][0]
                     strand=gene_dict[gene][trans_ID][i][3]
-                    IR=[chrom,strand,gene_dict[gene][trans_ID][i][2],gene_dict[gene][trans_ID][i+1][1]]
-                    if IR not in IR_coord:                        
-                        IR_coord.append(IR)
+                    db=gene_dict[gene][trans_ID][i][-1]
+                    IR=[chrom,strand,gene_dict[gene][trans_ID][i][2],gene_dict[gene][trans_ID][i+1][1], db, trans_ID]
+                    #Check if already in list
+                    no_match=True
+                    for entry in IR_coord:
+                        if IR[0:-2]== entry[0:-2]:
+                            #theres a match
+                            no_match=False
+                            #if its already there, update db and Transcript ID
+                            #add transcript id (which should be different but just in case)
+                            if exon[-2] not in entry[-1]:
+                                entry[-1][exon[-2]]=[exon[-1]]
+                            else:
+                                entry[-1][exon[-2]].append(exon[-1])
+                            #update db according to whether this one is included already.
+                            #The if statement will catch it only if its the opposite database by itself at this point in the entry.
+                            if exon[-2] not in entry[-2]:
+                                entry[-2]=entry[-2]+exon[-2]
+                    #If there was no match found, then we have a completely new exon and append it to gene_exons
+                    if no_match==True:
+                        CE_exons.append(exon[0:-1].append(dict))
+                        CE_exons[-1][-1][exon[-2]]=exon[-1]
+                        
             #Sort IR entries by start of intron
             IR_coord.sort(key=lambda x: x[2])
             #Write IR entries into output file
             for IR in IR_coord:
-                out.write("{}_{}_{}_{}\t{}\t{}\n".format(IR[0], IR[1], IR[2], IR[3], gene, "IR"))
+                out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(IR[0], IR[1], IR[2], IR[3], "IR", gene, IR[-2], IR[-1]["G"], IR[-1]["R"]))
             
             #If bed file wished for
             if args.bed==True:
