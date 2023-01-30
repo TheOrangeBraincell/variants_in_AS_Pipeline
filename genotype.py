@@ -145,8 +145,11 @@ with open(args.ranges, "r") as ranges:
 locations=open(args.input, "r")
 genotypes=open(args.out, "w")
 
-#Write header for genotypes table
-genotypes.write("#Genotype table per sample for variants in range " + args.coordinates + "\n")
+if args.coordinates:
+    #Write header for genotypes table
+    genotypes.write("#Genotype table per sample for variants in range " + args.coordinates + "\n")
+else:
+    genotypes.write("#Genotype table per sample for variants in whole genome range\n")
 
 #%% Assign Genotypes
 
