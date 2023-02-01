@@ -332,32 +332,39 @@ for gene in gene_dict:
                 gene_exons=[]
                 for trans_ID in gene_dict[gene]:
                     for exon in gene_dict[gene][trans_ID]:
-                        #Update exon information by adding trans_ID
-                        exon.append(trans_ID)
-                        #exon is now: [chrom, small, big, strand, position, db, transid]
+
+                        #exon is now: [chrom, small, big, strand, position, db]
                         #Because db and transid info wont match necessarily, we only check for up to -2
                         no_match=True
-                        for entry in gene_exons:
-                            #print(exon[0:-2], entry[0:-2])
-                            if exon[0:-2] == entry[0:-2]:
+                        for index,entry in enumerate(gene_exons):
+                            if exon[0:-1] == entry[0:-2]:
                                 no_match=False
                                 #if its already there, update db and Transcript ID
-                                #add transcript id (which should be different but just in case)
-                                if exon[-2] not in entry[-1]:
-                                    entry[-1][exon[-2]]=[exon[-1]]
+
                                 #update db according to whether this one is included already.
                                 #The if statement will catch it only if its the opposite database by itself at this point in the entry.
-                                if exon[-2] not in entry[-2]:
-                                    entry[-2]=entry[-2]+exon[-2]
+                                if exon[-1] not in entry[-2]:
+                                    entry[-2]=entry[-2]+exon[-1]
+                                    #Then the dictionary at the end of entry will also have - for the new database.
+                                    entry[-1][exon[-1]]=[trans_ID]
+                                else:
+                                    #there should already be a transcript id from that database in the dictionary at the last spot. append.
+                                    entry[-1][exon[-1]].append(trans_ID)
+                                #Update gene_exons entry
+                                gene_exons[index]=entry
                         #If there was no match found, then we have a completely new exon and append it to gene_exons
                         if no_match==True:
-                            print(exon)
-                            gene_exons.append(exon[0:-1])
-                            #print(exon[-2])
-                            if exon[-2]=="G":
-                                gene_exons[-1][-1]={exon[-2]:exon[-1], "R":"-"}
-                            elif exon[-2]=="R":
-                                gene_exons[-1][-1]={exon[-2]:exon[-1], "R":"-"}
+                            if exon[-1]=="G":
+                                temp_list=[i for i in exon]
+                                temp_list.append({exon[-1]:[trans_ID], "R":"-"})
+                                gene_exons.append(temp_list)
+                            elif exon[-1]=="R":
+                                temp_list=[i for i in exon]
+                                temp_list.append({exon[-1]:[trans_ID], "G":"-"})
+                                gene_exons.append(temp_list)
+                            else:
+                                print("WTF? ",  exon)
+
             #Go through all exons per gene to find alternative donors/acceptors.
             #Initiate potential AA/AD for each gene.
             potential_AA=[]
@@ -422,7 +429,7 @@ for gene in gene_dict:
             if event=="AA":
                 #Sort entries after location and coordinates
                 for aa_event in potential_AA:
-                    aa_event.sort()
+                    aa_event[0].sort()
                 potential_AA.sort(key=lambda x: int(x[0][0]))
                 
                 #numerate events
@@ -432,7 +439,7 @@ for gene in gene_dict:
                     for starts in aa_event[0]:
                         out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(event_ID, gene_ranges[gene][0],
                                                              gene_ranges[gene][1],
-                                                             starts, "AA", gene, aa_event[1], aa_event[2]["G"], aa_event[2]["R"]))
+                                                             starts, "AA", gene, aa_event[1], ",".join(aa_event[2]["G"]), ",".join(aa_event[2]["R"])))
                 if args.bed==True:
                     bed=open(args.out+"AA.bed", "w")
                     if len(potential_AA)!=0:
@@ -457,11 +464,11 @@ for gene in gene_dict:
                 event_ID=0
                 for ad_event in potential_AD:
                     event_ID+=1
-                    print(ad_event)
+                    #print(ad_event)
                     for stops in ad_event[0]:
                         out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(event_ID, gene_ranges[gene][0],
                                                              gene_ranges[gene][1],
-                                                             stops, "AD", gene, ad_event[1], ad_event[2]["G"], ad_event[2]["R"]))
+                                                             stops, "AD", gene, ad_event[1], ",".join(ad_event[2]["G"]), ",".join(ad_event[2]["R"])))
                 if args.bed==True:
                     bed=open(args.out+"AD.bed", "w")
                     if len(potential_AD)!=0:
@@ -489,30 +496,41 @@ for gene in gene_dict:
                     if exon[4]=="middle":
                         #Check if they are already in CE exons
                         no_match=True
-                        for entry in CE_exons:
-                            if exon[0:-2] == entry[0:-2]:
+                        for index,entry in enumerate(CE_exons):
+                            if exon[0:-1] == entry[0:-2]:
                                 no_match=False
                                 #if its already there, update db and Transcript ID
-                                #add transcript id (which should be different but just in case)
-                                if exon[-2] not in entry[-1]:
-                                    entry[-1][exon[-2]]=[exon[-1]]
-                                else:
-                                    entry[-1][exon[-2]].append(exon[-1])
+
                                 #update db according to whether this one is included already.
                                 #The if statement will catch it only if its the opposite database by itself at this point in the entry.
-                                if exon[-2] not in entry[-2]:
-                                    entry[-2]=entry[-2]+exon[-2]
+                                if exon[-1] not in entry[-2]:
+                                    entry[-2]=entry[-2]+exon[-1]
+                                    #Then the dictionary at the end of entry will also have - for the new database.
+                                    entry[-1][exon[-1]]=[trans_ID]
+                                else:
+                                    #there should already be a transcript id from that database in the dictionary at the last spot. append.
+                                    entry[-1][exon[-1]].append(trans_ID)
+                                #Update gene_exons entry
+                                CE_exons[index]=entry
                         #If there was no match found, then we have a completely new exon and append it to gene_exons
                         if no_match==True:
-                            CE_exons.append(exon[0:-1].append(dict))
-                            CE_exons[-1][-1][exon[-2]]=exon[-1]
+                            if exon[-1]=="G":
+                                temp_list=[i for i in exon]
+                                temp_list.append({exon[-1]:[trans_ID], "R":"-"})
+                                CE_exons.append(temp_list)
+                            elif exon[-1]=="R":
+                                temp_list=[i for i in exon]
+                                temp_list.append({exon[-1]:[trans_ID], "G":"-"})
+                                CE_exons.append(temp_list)
+                            else:
+                                print("WTF? ",  exon)
                         
             #Sort exons after start coordinate
             CE_exons.sort(key=lambda x: int(x[1]))
             #Write potential CE into output for this gene.
             for exon in CE_exons:
                 out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(exon[0], exon[3],
-                                              exon[1], exon[2], "CE", gene, exon[-2], exon[-1]["G"], exon[-1]["R"]))
+                                              exon[1], exon[2], "CE", gene, exon[-2], ",".join(exon[-1]["G"]), ",".join(exon[-1]["R"])))
             #If bed file wanted
             if args.bed==True:
                 bed=open(args.out+"CE.bed", "w")
@@ -542,25 +560,33 @@ for gene in gene_dict:
                             #theres a match
                             no_match=False
                             #if its already there, update db and Transcript ID
-                            #add transcript id (which should be different but just in case)
-                            if exon[-2] not in entry[-1]:
-                                entry[-1][exon[-2]]=[exon[-1]]
+                            #if the db is not in the entries db, then it needs to be added to db and dict.
+                            if IR[-2] not in entry[-2]:
+                                #add the db strings
+                                entry[-2]=entry[-2]+IR[-2]
+                                #replace "-" in dictionary, initialize transcript list for new db
+                                entry[-1][IR[-2]]=[IR[-1]]
                             else:
-                                entry[-1][exon[-2]].append(exon[-1])
-                            #update db according to whether this one is included already.
-                            #The if statement will catch it only if its the opposite database by itself at this point in the entry.
-                            if exon[-2] not in entry[-2]:
-                                entry[-2]=entry[-2]+exon[-2]
+                                #just add the trans ID to the dict, as db is already ok.
+                                entry[-1][IR[-2]].append(IR[-1])
+
                     #If there was no match found, then we have a completely new exon and append it to gene_exons
                     if no_match==True:
-                        CE_exons.append(exon[0:-1].append(dict))
-                        CE_exons[-1][-1][exon[-2]]=exon[-1]
+                        temp_list=IR[0:-1]
+                        if IR[-2]=="G":
+                            temp_list.append({"G":[IR[-1]], "R":"-"})
+                            IR_coord.append(temp_list)
+                        elif IR[-2]=="R":
+                            temp_list.append({"R":[IR[-1]], "G":"-"})
+                            IR_coord.append(temp_list)
+                        else:
+                            print("WTF ", IR)
                         
             #Sort IR entries by start of intron
             IR_coord.sort(key=lambda x: x[2])
             #Write IR entries into output file
             for IR in IR_coord:
-                out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(IR[0], IR[1], IR[2], IR[3], "IR", gene, IR[-2], IR[-1]["G"], IR[-1]["R"]))
+                out.write("{}_{}_{}_{}\t{}\t{}\t{}\t{}\t{}\n".format(IR[0], IR[1], IR[2], IR[3], "IR", gene, IR[-2], ",".join(IR[-1]["G"]), ",".join(IR[-1]["R"])))
             
             #If bed file wished for
             if args.bed==True:
