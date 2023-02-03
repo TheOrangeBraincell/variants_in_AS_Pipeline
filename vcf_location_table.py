@@ -293,10 +293,10 @@ with open(args.out, "w") as out:
                         genotype="0/0"
                     #not the same but genotype 1 is 0/0
                     elif g1=="0/0":
-                        genotype="0/"+str(alt_bases.index(a2+1))
+                        genotype="0/"+str(alt_bases.index(a2)+1)
                     #same but for genotype 2
                     elif g2=="0/0":
-                        genotype="0/"+str(alt_bases.index(a1+1))
+                        genotype="0/"+str(alt_bases.index(a1)+1)
                     elif g1=="ND" and g2=="ND":
                         genotype="ND"
                     elif g1=="ND":
