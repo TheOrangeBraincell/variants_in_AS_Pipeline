@@ -43,6 +43,9 @@ Procedure:
 Useage:
     python variants_in_AS_Pipeline/PSI.py -s ../Sample_Data -i new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL
     
+    #atm only works for -AS ALL
+    
+    
 Possible Bugs:
 """
 
@@ -208,7 +211,7 @@ def PSI_for_Gene(gene, events, sample):
                 PSI=PSI_CE(sample, event, gene)
                 if PSI==1:
                     CE_PSI[sample].append(events[AS][event])
-                psi_scores.append(PSI[0])
+                psi_scores.append(PSI)
             else:
                 PSI=PSI_IR(sample, event, gene)
                 psi_scores.append(PSI)
@@ -546,6 +549,7 @@ def PSI_AD(gene, sample, event):
     for i in event:
         stops.append(int(i[2]))
         
+    unsorted_stops=stops
     #Sort starts by coordinate.
     stops=sorted(stops)
     
@@ -557,7 +561,7 @@ def PSI_AD(gene, sample, event):
     
     #Spliced Counters
     spliced_counters=[0]*len(event)
-    
+    #open bam file.
     samfile=pysam.AlignmentFile(bam_file, 'rb', index_filename=index_file)
     spliced_reads=samfile.fetch(chrom, gene_start, gene_stop)
     
@@ -615,7 +619,7 @@ def PSI_AD(gene, sample, event):
             current_start= exon2_start
     
     #Now we need to still count the unspliced reads in the difference regions
-    difference_counters=[0]*(len(stops)-1)
+    difference_counters=[]
     difference_lengths=[] #For normalization
     for i in range(0, len(stops)-1):
         stop1=stops[i]
@@ -699,7 +703,9 @@ def PSI_AD(gene, sample, event):
             if str(s) in event[i]:
                 psi_sorted[i]=psi[stops.index(s)]
                 break
-    
+    if stops != unsorted_stops:        
+        print(stops, unsorted_stops)
+        print(psi, psi_sorted)
     return psi_sorted
 
 def PSI_IR(sample, entry, gene):
@@ -1008,7 +1014,6 @@ with open(args.input,"r") as infile:
             
             #Previous gene is not outside of range! Horray! Make Scores
             else:
-                
                 #"Go through samples, extract reads, loop through events, do PSI"
                 scores=dict()
                 for sample in sample_names:
