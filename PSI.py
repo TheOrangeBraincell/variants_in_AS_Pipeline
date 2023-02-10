@@ -703,9 +703,7 @@ def PSI_AD(gene, sample, event):
             if str(s) in event[i]:
                 psi_sorted[i]=psi[stops.index(s)]
                 break
-    if stops != unsorted_stops:        
-        print(stops, unsorted_stops)
-        print(psi, psi_sorted)
+
     return psi_sorted
 
 def PSI_IR(sample, entry, gene):
