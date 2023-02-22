@@ -56,7 +56,6 @@ import glob
 import re
 import time
 import pysam
-import os
 import math
 from inspect import currentframe, getframeinfo
 
@@ -365,8 +364,8 @@ def PSI_CE(sample, CE, gene):
 def PSI_AA(gene, sample, event):
     chrom = current_gene[1].strip("chr")
     strand=current_gene[2]
-    gene_start=current_gene[3]
-    gene_stop=current_gene[4]
+    gene_start=int(current_gene[3])
+    gene_stop=int(current_gene[4])
     
     #Find .bam file corresponding to sample name.
     for file in bam_file_list:
@@ -549,7 +548,6 @@ def PSI_AD(gene, sample, event):
     for i in event:
         stops.append(int(i[2]))
         
-    unsorted_stops=stops
     #Sort starts by coordinate.
     stops=sorted(stops)
     
@@ -850,7 +848,7 @@ def PSI_IR(sample, entry, gene):
         read_start=int(read.reference_start)
         read_length=int(read.infer_query_length())
         #check coordinates, if they overlap the exon1end or the exon2start, it could be an overlap read.
-        parts=re.search(r'((?:\d+[I,D,S,H])?)((?:\d+M)*)((?:\d+[I,D,S,H])?)((?:\d+M)?)((?:\d+[I,D,S,H])?)',read.cigarstring)
+        parts=re.search(r'((?:\d+[I,D,S,H])?)((?:\d+M)*)((?:\d+[I,D,S,H])?)((?:\d+M)?)((?:\d+[I,D,S,H])?)((?:\d+M)?)',read.cigarstring)
         #5 groups: first one before match, second match, third one in between matches, fourth one match, 5th following match.
         match_length=0
         after_match=0
@@ -888,10 +886,15 @@ def PSI_IR(sample, entry, gene):
             after_match=int(re.sub('[IDSH]', '', parts.group(5)))
         read_stop=read_stop-after_match
         
+        #Potential third match group
+        if parts.group(6):
+            #Add to match length
+            match_length+=int(parts.group(6).strip("M"))
+        
         #matching parts coordinates
         if read_stop-read_start!=match_length:
             print("Error calculating: ",read_stop-read_start, match_length, read.cigarstring)
-            print(parts.group(1),parts.group(2),parts.group(3),parts.group(4),parts.group(5))
+            print(parts.group(1),parts.group(2),parts.group(3),parts.group(4),parts.group(5), parts.group(6))
             quit()
         
 

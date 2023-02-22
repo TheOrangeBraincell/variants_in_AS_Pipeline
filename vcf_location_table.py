@@ -36,7 +36,6 @@ Possible Bugs:
 import argparse
 import glob
 import gzip
-import os
 import re
 import time
 
