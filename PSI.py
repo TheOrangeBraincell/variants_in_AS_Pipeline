@@ -282,12 +282,27 @@ def PSI_CE(sample, CE, gene):
             continue
         read_name=read.query_name
     
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
+        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
+            num_of_groups=0
+            for i in junction.groups():
+                if i:
+                    num_of_groups+=1
+            
             exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
+            if num_of_groups==3:
+                intron = int(junction.group(2))
+                exon2=int(junction.group(3))
+            elif num_of_groups==4:
+                intron=int(junction.group(2))+int(junction.group(3))
+                exon2=int(junction.group(4))
+            elif num_of_groups==5:
+                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
+                exon2=int(junction.group(5))
+            else:
+                #smths weird with this one. skip
+                continue
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -362,7 +377,7 @@ def PSI_CE(sample, CE, gene):
 
 
 def PSI_AA(gene, sample, event):
-    chrom = current_gene[1].strip("chr")
+    chrom = current_gene[1]
     strand=current_gene[2]
     gene_start=int(current_gene[3])
     gene_stop=int(current_gene[4])
@@ -405,12 +420,27 @@ def PSI_AA(gene, sample, event):
         current_start = int(read.reference_start)
         read_name=read.query_name
         
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
+        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
+            num_of_groups=0
+            for i in junction.groups():
+                if i:
+                    num_of_groups+=1
+            
             exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
+            if num_of_groups==3:
+                intron = int(junction.group(2))
+                exon2=int(junction.group(3))
+            elif num_of_groups==4:
+                intron=int(junction.group(2))+int(junction.group(3))
+                exon2=int(junction.group(4))
+            elif num_of_groups==5:
+                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
+                exon2=int(junction.group(5))
+            else:
+                #smths weird with this one. skip
+                continue
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -552,10 +582,7 @@ def PSI_AD(gene, sample, event):
     stops=sorted(stops)
     
     #We only want to count each read of a read pair once per event. So we have a list of reads that have already been counted.
-    counted=dict()
-    for i in range(0, len(event)):
-        counted[i]=dict()
-    #Note that we prioritize counting spliced reads, so those are checked first.
+    counted=[]
     
     #Spliced Counters
     spliced_counters=[0]*len(event)
@@ -577,12 +604,27 @@ def PSI_AD(gene, sample, event):
         current_start = int(read.reference_start)
         read_name=read.query_name
         
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
+        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
+            num_of_groups=0
+            for i in junction.groups():
+                if i:
+                    num_of_groups+=1
+            
             exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
+            if num_of_groups==3:
+                intron = int(junction.group(2))
+                exon2=int(junction.group(3))
+            elif num_of_groups==4:
+                intron=int(junction.group(2))+int(junction.group(3))
+                exon2=int(junction.group(4))
+            elif num_of_groups==5:
+                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
+                exon2=int(junction.group(5))
+            else:
+                #smths weird with this one. skip
+                continue
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -764,7 +806,7 @@ def PSI_IR(sample, entry, gene):
         if Filter_Reads(read, strand)==True:
             continue
         #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+        if not re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
             continue
 
         read_start=int(read.reference_start)
@@ -774,12 +816,29 @@ def PSI_IR(sample, entry, gene):
         current_cigar = read.cigarstring
         current_start = int(read_start)
         
-        while re.search(r'\d+M\d+N\d+M', current_cigar):
+        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
+            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
+            
+            num_of_groups=0
+            for i in junction.groups():
+                if i:
+                    num_of_groups+=1
+            
             exon1 = int(junction.group(1))
-            intron = int(junction.group(2))
-            exon2 = int(junction.group(3))
+            if num_of_groups==3:
+                intron = int(junction.group(2))
+                exon2=int(junction.group(3))
+            elif num_of_groups==4:
+                intron=int(junction.group(2))+int(junction.group(3))
+                exon2=int(junction.group(4))
+            elif num_of_groups==5:
+                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
+                exon2=int(junction.group(5))
+            else:
+                #smths weird with this one. skip
+                continue
+            
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -837,7 +896,7 @@ def PSI_IR(sample, entry, gene):
         if Filter_Reads(read, strand)==True:
             continue
         #no spliced reads
-        if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+        if re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
             continue
         
         #if distance between reads too far, then this is a sign that the second read is in an exon and in between is a break. So no IR.
@@ -895,7 +954,8 @@ def PSI_IR(sample, entry, gene):
         if read_stop-read_start!=match_length:
             print("Error calculating: ",read_stop-read_start, match_length, read.cigarstring)
             print(parts.group(1),parts.group(2),parts.group(3),parts.group(4),parts.group(5), parts.group(6))
-            quit()
+            #if smth is funny with the read skip it.
+            continue
         
 
         #Find the overlapping ones left side
