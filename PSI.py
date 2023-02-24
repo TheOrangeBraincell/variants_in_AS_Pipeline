@@ -267,8 +267,11 @@ def PSI_CE(sample, CE, gene):
         if Filter_Reads(read, strand)==True:
             continue
         #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
+        if not re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+            #This is spliced, but its could have insertions and/or deletions around the intron... 
+            if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                excluded_reads.add(read.query_name)
+                continue
         #Allow for several splice junctions in one read.
         current_cigar = read.cigarstring
         read_start=int(read.reference_start)
@@ -282,27 +285,14 @@ def PSI_CE(sample, CE, gene):
             continue
         read_name=read.query_name
     
-        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
+        while re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
-            num_of_groups=0
-            for i in junction.groups():
-                if i:
-                    num_of_groups+=1
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
             
+            #assign variables to groups.
             exon1 = int(junction.group(1))
-            if num_of_groups==3:
-                intron = int(junction.group(2))
-                exon2=int(junction.group(3))
-            elif num_of_groups==4:
-                intron=int(junction.group(2))+int(junction.group(3))
-                exon2=int(junction.group(4))
-            elif num_of_groups==5:
-                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
-                exon2=int(junction.group(5))
-            else:
-                #smths weird with this one. skip
-                continue
+            intron=int(junction.group(2))
+            exon2=int(junction.group(3))
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -356,7 +346,9 @@ def PSI_CE(sample, CE, gene):
         if Filter_Reads(read, strand)==True:
             continue
         #no spliced reads
-        if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+        if re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+            if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                excluded_reads.add(read.query_name)
             continue
         read_name=read.query_name
         if read_name not in counted:
@@ -411,8 +403,11 @@ def PSI_AA(gene, sample, event):
         if Filter_Reads(read, strand)==True:
             continue
         #only want spliced reads for this
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
+        if not re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+            #This is spliced, but its could have insertions and/or deletions around the intron... 
+            if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                excluded_reads.add(read.query_name)
+                continue
         
         #The rest can be counted for spliced.
         #Allow for several splice junctions in one read.
@@ -420,27 +415,14 @@ def PSI_AA(gene, sample, event):
         current_start = int(read.reference_start)
         read_name=read.query_name
         
-        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
+        while re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
-            num_of_groups=0
-            for i in junction.groups():
-                if i:
-                    num_of_groups+=1
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
             
+            #assign variables to groups.
             exon1 = int(junction.group(1))
-            if num_of_groups==3:
-                intron = int(junction.group(2))
-                exon2=int(junction.group(3))
-            elif num_of_groups==4:
-                intron=int(junction.group(2))+int(junction.group(3))
-                exon2=int(junction.group(4))
-            elif num_of_groups==5:
-                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
-                exon2=int(junction.group(5))
-            else:
-                #smths weird with this one. skip
-                continue
+            intron=int(junction.group(2))
+            exon2=int(junction.group(3))
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -491,7 +473,10 @@ def PSI_AA(gene, sample, event):
             if Filter_Reads(read, strand)==True:
                 continue
             #no spliced reads
-            if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            if re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+                #This is spliced, but its could have insertions and/or deletions around the intron... 
+                if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                    excluded_reads.add(read.query_name)
                 continue
             
             #Check if already counted
@@ -596,35 +581,25 @@ def PSI_AD(gene, sample, event):
         if Filter_Reads(read, strand)==True:
             continue
         #only spliced reads
-        if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
-            continue
+        if not re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+            #This is spliced, but its could have insertions and/or deletions around the intron... 
+            if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                excluded_reads.add(read.query_name)
+                continue
         
         #Allow for several splice junctions in one read.
         current_cigar = read.cigarstring
         current_start = int(read.reference_start)
         read_name=read.query_name
         
-        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
+        while re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
-            num_of_groups=0
-            for i in junction.groups():
-                if i:
-                    num_of_groups+=1
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
             
+            #assign variables to groups.
             exon1 = int(junction.group(1))
-            if num_of_groups==3:
-                intron = int(junction.group(2))
-                exon2=int(junction.group(3))
-            elif num_of_groups==4:
-                intron=int(junction.group(2))+int(junction.group(3))
-                exon2=int(junction.group(4))
-            elif num_of_groups==5:
-                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
-                exon2=int(junction.group(5))
-            else:
-                #smths weird with this one. skip
-                continue
+            intron=int(junction.group(2))
+            exon2=int(junction.group(3))
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -675,15 +650,18 @@ def PSI_AD(gene, sample, event):
             if Filter_Reads(read, strand)==True:
                 continue
             #no spliced reads
-            if re.search(r'\d+M\d+N\d+M',read.cigarstring):
+            if re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+                #This is spliced, but its could have insertions and/or deletions around the intron... 
+                if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                    excluded_reads.add(read.query_name)
                 continue
             
             #Check if already counted
             read_name=read.query_name
-            if read_name not in counted[i]:
+            if read_name not in counted:
                 #if not counted, add
                 counter+=1
-                counted[i][read_name]="unspliced"
+                counted.append(read_name)
             
         #Add difference reads into list
         difference_counters.append(counter)
@@ -807,7 +785,10 @@ def PSI_IR(sample, entry, gene):
             continue
         #only spliced reads
         if not re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
-            continue
+            #This is spliced, but its could have insertions and/or deletions around the intron... 
+            if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                excluded_reads.add(read.query_name)
+                continue
 
         read_start=int(read.reference_start)
         read_length=int(read.infer_query_length())
@@ -816,29 +797,14 @@ def PSI_IR(sample, entry, gene):
         current_cigar = read.cigarstring
         current_start = int(read_start)
         
-        while re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M', current_cigar):
+        while re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar):
             #assign splice junction variables
-            junction = re.search(r'(\d+)M(?:(\d+)[I,D,S,H])?(\d+)N(?:(\d+)[I,D,S,H])?(\d+)M', current_cigar)
+            junction = re.search(r'(\d+)M(\d+)N(\d+)M', current_cigar)
             
-            num_of_groups=0
-            for i in junction.groups():
-                if i:
-                    num_of_groups+=1
-            
+            #assign variables to groups.
             exon1 = int(junction.group(1))
-            if num_of_groups==3:
-                intron = int(junction.group(2))
-                exon2=int(junction.group(3))
-            elif num_of_groups==4:
-                intron=int(junction.group(2))+int(junction.group(3))
-                exon2=int(junction.group(4))
-            elif num_of_groups==5:
-                intron=int(junction.group(2))+int(junction.group(3))+int(junction.group(4))
-                exon2=int(junction.group(5))
-            else:
-                #smths weird with this one. skip
-                continue
-            
+            intron=int(junction.group(2))
+            exon2=int(junction.group(3))
             exon1_start = current_start
             exon1_end = exon1_start+exon1+1  #exclusive
             exon2_start = exon1_end+intron -1 #inclusive
@@ -897,6 +863,9 @@ def PSI_IR(sample, entry, gene):
             continue
         #no spliced reads
         if re.search(r'\d+M(?:\d+[I,D,S,H])?\d+N(?:\d+[I,D,S,H])?\d+M',read.cigarstring):
+            #This is spliced, but its could have insertions and/or deletions around the intron... 
+            if not re.search(r'\d+M\d+N\d+M',read.cigarstring):
+                excluded_reads.add(read.query_name)
             continue
         
         #if distance between reads too far, then this is a sign that the second read is in an exon and in between is a break. So no IR.
@@ -1025,6 +994,9 @@ sample_names=[i.split("/")[-4] for i in bam_file_list]
 #Open output file
 out=open(args.out, "w")
 out.write("Location\t"+"\t".join(sample_names)+"\n")
+
+#to keep track of how many "weird" spliced reads we exclude, initiate set
+excluded_reads=set()
 
 current_gene=""
 #For genes not within the input range, we have a flag
