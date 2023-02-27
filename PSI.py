@@ -484,7 +484,7 @@ def PSI_AA(gene, sample, event):
             if read_name not in counted[i]:
                 #if not counted, add
                 counter+=1
-                counted[i][read_name]="unspliced"
+                counted.append(read_name)
             
         #Add difference reads into list
         difference_counters.append(counter)
