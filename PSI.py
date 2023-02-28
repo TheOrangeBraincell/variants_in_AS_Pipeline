@@ -67,12 +67,12 @@ start_time=time.time()
 
 "0. Setting up argparse, handling input parameters"
 
-parser = argparse.ArgumentParser(prog='Detect and Score Alternative Splicing',
+parser = argparse.ArgumentParser(prog='Score Alternative Splicing',
                                  usage='%(prog)s -s SAMPLE-FOLDER -o OUTPUT-FOLDER \
                                      -g GENCODE-FILE -r REFSEQ-FILE \
                                          [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE \
                                              -is INSERT-SIZE',
-                                 description="""Per AS event of interest, creates
+                                 description="""Creates
                                  a table with the PSI scores supporting said event
                                  per sample in sample folder.""")
 

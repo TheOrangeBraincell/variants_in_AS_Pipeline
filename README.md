@@ -41,12 +41,14 @@ conda install -c bioconda pysam
 ```
 
 #### Input Files
-* Human Genome .tsv file GENCODE, containing annotated exons from UCSC Table Browser https://genome.ucsc.edu/cgi-bin/hgTables. (hg 38)
- * Human Genome .tsv file RefSeq, containing annotated exons from UCSC Table Browser https://genome.ucsc.edu/cgi-bin/hgTable. (hg 38)
+* Human Genome .tsv file GENCODE, containing annotated exons from UCSC Table Browser https://genome.ucsc.edu/cgi-bin/hgTables. (hg 38) (You can find screenshots of the table settings in the "How_to_get_right_Database_Tables".)
+ * Human Genome .tsv file RefSeq, containing annotated exons from UCSC Table Browser https://genome.ucsc.edu/cgi-bin/hgTable. (hg 38) (You can find screenshots of the table settings in the "How_to_get_right_Database_Tables".)
  * sample set of alignment files (.bam/.bai) from the SCAN-B initiative.
  * sample set of variant calling files (.vcf) from the SCAN-B initiative.
  * sample set of gene expression information files (gene.tsv) from the SCAN-B initiative.
  
+#### Computational Power
+The pipeline was run on a cluster for sensitive data in Uppsala (https://www.uppmax.uu.se/resources/systems/the-bianca-cluster/). It was sped up by running the variant calling file and genotyping step per chromosome. And then the PSI scores step only for set of genes with sufficient expression (FPKM>10).
  
 ### 1. Parsing through variant calling files (.vcf): Extracting Locations
 For this step all .vcf files for all samples to be investigated are needed. The script *vcf_location_table.py* can be used on the whole genome or on a specific set of coordinates.
@@ -113,33 +115,71 @@ python genotype.py -s ../Sample_Data/ -i sorted_location_table_ESR1.tsv -o genot
 
 The result is a complete location x sample table, containing the genotype of every sample at every location.
 
-### 3. Identifying annotated Alternative splicing events and Scoring them based on Alignment files
-
-Based on GENCODE (v 39) and RefSeq annotation files (hg v38) alternative splicing (AS) events are identified. For the coordinates of those events, reads are extracted from the samples' alignment files and PSI scores calculated.
+### 3. Identifying alternative splicing events based on gene annotation
+Based on GENCODE (v 39, hg38) and RefSeq annotation files (hg v38) alternative splicing (AS) events are identified. 
 
 ```
-usage: AS_PSY.py -s SAMPLE-FOLDER -o OUTPUT-FOLDER -g GENCODE-FILE -r REFSEQ-FILE [-c] "chrX:XXXXXX-XXXXXX"  -as AS-TYPE -is INSERT-SIZE
+usage: Identify Alternative Splicing -o OUTPUT-FILE                                      -g GENCODE-FILE -r REFSEQ-FILE                                          [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE
 
 Per AS event of interest, creates a table with the PSI scores supporting said event per sample in sample folder.
 
 optional arguments:
-
--h, --help                                   show this help message and exit
---samples SAMPLES, -s SAMPLES                folder containing sample folders containing among others, the vcf, bam and gene.tsv files.
---out OUT, -o OUT                            Output folder, containing PSI table.
---coordinates COORDINATES, -c COORDINATES    Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-stop
---gencode GENCODE, -g GENCODE                tsv file containing bed file information on annotated exons from GENCODE39 as well as gene names.
---refseq REFSEQ, -r REFSEQ                   tsv file containing bed file information on annotated exons from RefSeq as well as gene names.
---AS AS, -as AS                              Which type of alternative splicing event we are interested in. "CE" for Casette Exons, "AA" for alternative acceptors, "AD" for alternative donors, "IR" for intron retention and "ALL" for all of the types. Several seperated by ,.
---InsertSize INSERTSIZE, -is INSERTSIZE      Average Insert size plus standard deviation. Format 'Mean X Standard Deviation Y. Only needed if one of the AS of interest is IR.'
+  -h, --help            show this help message and exit
+  --out OUT, -o OUT     Output file, containing events and type per gene.
+  --coordinates COORDINATES, -c COORDINATES
+                        Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-
+                        stop
+  --gencode GENCODE, -g GENCODE
+                        tsv file containing bed file information on annotated exons from GENCODE39 as well as gene
+                        names.
+  --refseq REFSEQ, -r REFSEQ
+                        tsv file containing bed file information on annotated exons from RefSeq as well as gene names.
+  --AS AS, -as AS       Which type of alternative splicing event we are interested in. "CE" for Casette Exons, "AA"
+                        for alternative acceptors, "AD" for alternative donors, "IR" for intron retention and "ALL"
+                        for all of the types. Several seperated by ,.
+  --bed BED, -b BED     If an output file bed file for each type of event is wished for, set to True
 ```
 Run with for example:
 ```
 #with coordinates f.e. Estrogen Receptor
-python variants_in_AS_Pipeline/AS_PSI.py -s ../Sample_Data/ -o PSI_ESR1/ -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968"
+ python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
 ```
 
-The result is a separate table for each AS event the script was run for containing PSI scores for event location by Sample. The script also outputs a .bed file per AS event, that can be opened in f.e. igv to see the coordinates of the AS events.
+The result is a tab separated file containing alternative splicing events and their coordinates as well as information on what transcript ID and gene name they are found in.
+
+### 4. Scoring the identified alternative splicing events based on RNA reads
+We now score the alternative splice events identified in the previous step with PSI scores using the script *PSI.py*. 
+
+```
+usage: Score Alternative Splicing -s SAMPLE-FOLDER -o OUTPUT-FOLDER -g GENCODE-FILE -r REFSEQ-FILE [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE -is INSERT-SIZE
+
+Creates a table with the PSI scores supporting said event per sample in sample folder.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --samples SAMPLES, -s SAMPLES
+                        folder containing sample folders containing among others, the vcf, bam and gene.tsv files.
+  --input INPUT, -i INPUT
+                        Table with all identified AS events, created by Identify_AS.py
+  --out OUT, -o OUT     Output file, containing PSI tables.
+  --InsertSize INSERTSIZE, -is INSERTSIZE
+                        Average Insert size plus standard deviation. Format 'Mean X Standard Deviation Y'
+  --coordinates COORDINATES, -c COORDINATES
+                        Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-
+                        stop
+  --AS AS, -as AS       Which type of alternative splicing event we are interested in. "CE" for Casette Exons, "AA"
+                        for alternative acceptors, "AD" for alternative donors, "IR" for intron retention and "ALL"
+                        for all of the types. Several seperated by ,.
+```
+Run with for example:
+```
+python variants_in_AS_Pipeline/PSI.py -s ../Sample_Data -i new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL -o ESR1_PSI.tsv
+```
+The result is a tab separated file containing the location of the event and its type in the first column, and the Samples PSI scores in the remaining columns. 
+
+### 5. Statistical testing of results
+
+
 
 ## Comparing Variants found based on RNA and DNA data
  

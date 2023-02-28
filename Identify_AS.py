@@ -39,7 +39,8 @@ Useage:
         - Whether bed file is wished for
     
     Outputs:
-        - table of event locations and types
+        - table of event locations and types, as well as gene information and transcript information.
+        - (optional) a .bed file containing the location of AS events.
 
 
     Instructions:
@@ -51,11 +52,12 @@ Useage:
         #With coordinates f.e. BRCA1 (neg strand)
         python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_BRCA1.tsv -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968" -ra new_PSI_script/gene_ranges.tsv
         
-        #for server
-        python Identify_AS.py -o PSI_ESR1.tsv -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as CE -c "chr6:151690496-152103274"
-        
+       
     
 Possible Bugs:
+    -not compatible with other database tables, as specifically tailored to the two used.
+    Instructions on how to retrieve the right ones from the ucsc table browser can be found
+    on the github.
 """
 
 
@@ -78,8 +80,7 @@ start_time=time.time()
 parser = argparse.ArgumentParser(prog='Identify Alternative Splicing',
                                  usage='%(prog)s -o OUTPUT-FILE \
                                      -g GENCODE-FILE -r REFSEQ-FILE \
-                                         [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE \
-                                             -is INSERT-SIZE',
+                                         [-c] "chrX:XXXXXX-XXXXXX" -as AS-TYPE',
                                  description="""Per AS event of interest, creates
                                  a table with the PSI scores supporting said event
                                  per sample in sample folder.""")
