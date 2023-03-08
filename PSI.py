@@ -1127,7 +1127,28 @@ with open(args.input,"r") as infile:
                 #1. column has format: chrom, strand, intronstart, intronend
                 #Save to list
                 events["IR"].append(info)
-                
+
+#Last genes scores still need to be written:
+if wrong_range==False:
+    #Previous gene is not outside of range! Horray! Make Scores
+    #"Go through samples, extract reads, loop through events, do PSI"
+    scores=dict()
+    for sample in sample_names:
+        #initialize CE list for sample, to append CE with PSI=1
+        CE_PSI[sample]=[]
+        PSI_scores=PSI_for_Gene(current_gene, events, sample)
+        
+        scores[sample]=PSI_scores
+    #Write into output file, separately for each AS
+    #Can merge them later, but it results in smaller files that way.
+    for i in range(0, len(infostrings)):
+        #add AS to infostring so we know what type of event it is.
+        newline=infostrings[i]
+        for sample in scores:
+            newline+="\t"+scores[sample][i]
+        out.write(newline+"\n")     
+        
+    #Reset events and current gene not necessary.
 
 out.close()
 
