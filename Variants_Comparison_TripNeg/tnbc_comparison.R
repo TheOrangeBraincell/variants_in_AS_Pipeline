@@ -8,6 +8,7 @@
 #
 
 library(tidyverse)
+library(RColorBrewer)
 
 setwd("C:\\Users\\mirja\\Documents\\University\\Master Thesis\\R and outputs\\TNBC_comparison")
 
@@ -124,12 +125,16 @@ dna_exons %>%
   filter(is.na(bins))
 
 ggplot(dna_exons, aes(fill=factor(Match, levels=c("absent", "unfiltered", "filtered")), x=bins))+
+  theme_classic()+
+  #scale_fill_viridis(discrete = T, name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
   xlab("FPKM values")+
-  ylab("Fraction of Variants found")+
-  scale_fill_discrete(name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
-  ggtitle("Fraction of variants found in DNA data, that are also found in RNA data")+
+  ylab("%Variants found")+
+  scale_color_brewer(palette = "BuPu")+
+  scale_fill_brewer(name = "Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
+  ggtitle("Variants found in DNA data, that are also found in RNA data")+
   geom_bar(position="fill")+
-  geom_text(aes(label = ..count..), stat = "count", position="fill", vjust =1.5 )+
+  theme(text = element_text(size = 15), axis.text=element_text(size=15))+
+  #geom_text(aes(label = ..count..), size=5, stat = "count", position="fill", vjust =1.5)+
   scale_x_discrete(guide=guide_axis(n.dodge=2))
 
 # Another. But for bins from 1-10
@@ -175,11 +180,14 @@ dna_exons %>%
   filter(is.na(bins))
 
 ggplot(dna_exons, aes(fill=factor(Match, levels=c("absent", "unfiltered", "filtered")), x=bins))+
+  theme_classic()+
   xlab("FPKM values")+
-  ylab("Fraction of Variants found")+
-  scale_fill_discrete(name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
-  ggtitle("Fraction of variants found in DNA data, that are also found in RNA data")+
+  ylab("%Variants found")+
+  scale_color_brewer(palette = "BuPu")+
+  scale_fill_brewer(name = "Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
+  ggtitle("Variants found in DNA data, that are also found in RNA data")+
   geom_bar(position="fill")+
+  theme(text = element_text(size = 15), axis.text=element_text(size=15))+
   #geom_text(aes(label = ..count..), stat = "count", position="fill", vjust =1.5 )+
   scale_x_discrete(guide=guide_axis(n.dodge=2))
 #General numbers of overlap!
@@ -268,14 +276,16 @@ rna_criteria %>%
 
 
 ggplot(dna_rna, aes(fill=factor(Pass_Fail, levels=c("Pass", "Fail")), x=Filter))+
+  theme_classic()+
+  #scale_color_brewer(palette = "Pastel1")+
   xlab("Filter criteria to Fail")+
-  ylab("Fraction of matching variants excluded by filter")+
-  scale_fill_manual(name = "Fraction of Variants which", labels = c("Pass", "Fail"),
-                    values=c("#00BA38", "#F8766D"))+
-  ggtitle("Fraction of matching variants between DNA and RNA data removed by filtering")+
+  ylab("Percentage of matching variants excluded by filter")+
+  scale_fill_brewer(name = "Variants which", labels = c("Pass", "Fail"), palette="BuPu")+
+  ggtitle("Matching variants between DNA and RNA data removed by filtering")+
   geom_bar(position="fill")+
-  #geom_text(aes(label = ..count..), stat = "count", position="fill", vjust =1.5 )+
-  scale_x_discrete(labels=c("GC-content>78%","HMPOL>5","low-complexity flag", "MSI>6", "quality score<55", "ucsc-repetitive flag", "Variant Depth <5"), guide=guide_axis(n.dodge=2))
+  theme(text = element_text(size = 15), axis.text.x = element_text(angle = 45, hjust=1))+
+  geom_text(aes(label = ..count..), stat = "count", position="fill", vjust =1.5 )+
+  scale_x_discrete(labels=c("GC-content>78%","HMPOL>5","low-complexity flag", "MSI>6", "quality score<55", "ucsc-repetitive flag", "Variant Depth <5"))
 
 #Lets try and do arthurs plot.
 
@@ -312,7 +322,10 @@ ggplot(dna_rna_fpkm, aes(x=Filter, y=FPKM))+
   scale_fill_discrete(name = "Fraction of Variants which", labels = c("Fail", "Pass"))+
   ggtitle("Do the matching variants who fail the filter criteria have higher FPKM values?")+
   ylim(0,100)+
-  scale_x_discrete(labels=c("GC-content>78%","HMPOL>5","low-complexity flag", "MSI>6", "quality score<55", "ucsc-repetitive flag", "Variant Depth <5"), guide=guide_axis(n.dodge=2))
+  theme(text = element_text(size = 15), axis.text.x = element_text(angle = 45, hjust=1))+
+  scale_x_discrete(labels=c("GC-content>78%","HMPOL>5","low-complexity flag", "MSI>6", "quality score<55", "ucsc-repetitive flag", "Variant Depth <5"))
+
+
 
 #How many of the entries failing the quality score, also fail other filters?
 
@@ -430,9 +443,10 @@ binned_indels_exons %>%
 
 
 ggplot(binned_indels_exons, aes(fill=factor(Match, levels=c("absent", "unfiltered", "filtered")), x=bins))+
+  theme_classic()+
   xlab("FPKM values")+
   ylab("Fraction of Variants found")+
-  scale_fill_discrete(name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
+  scale_fill_brewer(name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"), palette="BuPu")+
   ggtitle("Fraction of variants found in DNA data, that are also found in RNA data")+
   geom_bar(position="fill")+
   geom_text(aes(label = ..count..), stat = "count", position="fill", vjust =1.5 )+
