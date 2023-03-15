@@ -481,7 +481,7 @@ def PSI_AA(gene, sample, event):
             
             #Check if already counted
             read_name=read.query_name
-            if read_name not in counted[i]:
+            if read_name not in counted:
                 #if not counted, add
                 counter+=1
                 counted.append(read_name)
@@ -617,7 +617,7 @@ def PSI_AD(gene, sample, event):
                 for i in range(0, len(stops)):
                     #The coordinates on plus strand seem to be shifted for AD, by 1. Because we calculate it to be exclusive.
                     if str(stops)==str(exon1_end-1):
-                        if read_name not in counted[i]:
+                        if read_name not in counted:
                             spliced_counters[i]+=1
                             counted.append(read_name)
                 
@@ -625,7 +625,7 @@ def PSI_AD(gene, sample, event):
                 #Then the AD starts have to match the exon2_starts
                 for i in range(0, len(stops)):
                     if str(stops[i])==str(exon2_start):
-                        if read_name not in counted[i]:
+                        if read_name not in counted:
                             spliced_counters[i]+=1
                             counted.append(read_name)
             
@@ -1009,6 +1009,7 @@ with open(args.input,"r") as infile:
             continue
         #Find gene headers
         if line.startswith("#"):
+            line=line.strip("#")
             #Check if its the first
             if current_gene=="":
                 current_gene=[e.strip(" ") for e in line.strip("\n").split(",")]
@@ -1067,6 +1068,14 @@ with open(args.input,"r") as infile:
                 #Reset events and current gene
                 #list of gene information: gene name, chrom, strand, min, max
                 current_gene=[e.strip(" ") for e in line.strip("\n").split(",")]
+                #Check if in range
+                if args.coordinates:
+                    if current_gene[1]!= coord_chrom:
+                        wrong_range=True
+                    elif int(current_gene[3])>coord_stop or int(current_gene[4])<coord_start:
+                        wrong_range=True
+                    else:
+                        wrong_range=False
                 events={"AA":{}, "AD":{}, "CE":[], "IR":[]}
                 infostrings=[]
                 #To save CE per sample that have PSI=1
