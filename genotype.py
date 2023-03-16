@@ -22,7 +22,7 @@ Input:
 
 Useage:
     for ESR1 f.e.
-    python genotype.py -s ../Sample_Data/ -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151690496-152103274" 
+    python genotype.py -s ../Sample_Data/ -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151656691-152129619" 
     
     
 Possible Bugs:

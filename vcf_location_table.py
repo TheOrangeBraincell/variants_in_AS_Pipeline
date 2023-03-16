@@ -19,7 +19,7 @@ Procedure:
 Useage: Run in command line
     
     With coordinates for f.e. estrogen receptor:
-        python vcf_location_table.py -s ../Sample_Data/ -o location_table_ESR1.tsv -c "chr6:151690496-152103274"
+        python vcf_location_table.py -s ../Sample_Data/ -o location_table_ESR1.tsv -c "chr6:151656691-152129619"
     
     For whole genome:
         python vcf_location_table.py -s ../Sample_Data/ -o location_table_WG.tsv
@@ -36,6 +36,7 @@ Possible Bugs:
 import argparse
 import glob
 import gzip
+import os
 import re
 import time
 
@@ -102,7 +103,7 @@ while True:
 #%% Read vcf file
 
 #Find all the vcf files in the data folder.
-argument_glob=args.samples+"/**/*.vcf.gz"
+argument_glob=args.samples+"/*/*/*/*/*.vcf.gz"
 vcf_file_list=glob.glob(argument_glob, recursive=True)
 
 #If no vcf files are found, quit the program.
@@ -318,7 +319,7 @@ with open(args.out, "w") as out:
                 new_line.append("-")
         #Skip to new variant if there is 3 or more alleles.        
         if invalid_variant==True:
-            counter+=1
+            invalid_counter+=1
             continue
         
         out.write("\t".join(new_line)+"\n")
