@@ -41,8 +41,10 @@ with open(input_file, "r") as infile, open(output_file, "w") as outfile:
         
         c=0
         for psi in PSI_values:
-            if type(psi)==int:
+            #print(psi)
+            if psi!="NAN":
                 c+=1
+        #print(c)
         #If there is minimum two numerical PSI values in that row, keep it.
         if c>1:
             outfile.write(line)
