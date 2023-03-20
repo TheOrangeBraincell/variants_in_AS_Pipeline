@@ -114,6 +114,9 @@ if len(vcf_file_list)==0:
     quit()
 
 
+chromosomes=["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X", "Y", "M"]
+if args.coordinates:
+    chrom_index=chromosomes.index(coord_chrom.strip("chr"))
 #Initialize dictionaries
 variants=dict()
 #Sample list
@@ -141,11 +144,18 @@ for file in vcf_file_list:
         
         #If coordinates or name are given, restrict area of variants.
         if args.coordinates:
+            #we can assume that the chromosomes at least are sorted by appearance. Which means if we are at a chromosome after the one we look for, 
+            #we can stop reading the file.
             if chrom != coord_chrom:
-                continue
+                if chrom_index<chromosomes.index(chrom.strip("chr")):
+                    break
+                else:
+                    continue
+            
             else:
                 if int(position)< int(coord_start) or int(position)> int(coord_stop):
                     continue
+        
         "Before filtering, add all variants to genotype table."
         variant_ID=chrom+"_"+position
         #add to variant dict
@@ -225,6 +235,27 @@ print("Reading vcf: Done!            \n",end="\r")
 
 sample_names=sorted(sample_names)
 
+#sort variants after chromosome and location.
+variant_keys=list(variants.keys())
+sorted_chr_variants=[]
+
+#chromosomes have a bit of a specific order, so we do it manually...
+for chromosome in chromosomes:
+    for key, value in variants.items():
+        if key.startswith("chr"+chromosome):
+            sorted_chr_variants.append(key)
+
+#For positions i dont need to do it manually.
+sorted_variants=sorted(sorted_chr_variants, key=lambda x: int(x.split("_")[1]))
+
+sorted_dict=dict()
+for v in sorted_variants:
+    sorted_dict[v]=variants[v]
+
+#to not have to change everything below, we overwrite the variable.
+variants=sorted_dict
+#delete big thingies.
+del sorted_dict
 
 #%% Write output file
 
@@ -322,7 +353,13 @@ with open(args.out, "w") as out:
             invalid_counter+=1
             continue
         
-        out.write("\t".join(new_line)+"\n")
+        #If the new line only has "-" and "ND" then theres no point having it in the output file. as no alternative genotype passed filtering.
+        for i in new_line[1:]:
+            if i not in ["-", "ND"]:
+                #Proof that line is important. If it never finds any that isnt - or ND, it wont write it.
+                out.write("\t".join(new_line)+"\n")
+                break
+            
         counter+=1
         percentage=100*counter/len(list(variants.keys()))
         print("Writing Location Table: {:.2f}%".format(percentage),end="\r")
