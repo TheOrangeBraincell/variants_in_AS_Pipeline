@@ -22,7 +22,7 @@ Input:
 
 Useage:
     for ESR1 f.e.
-    python genotype.py -s ../Sample_Data/ -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151656691-152129619" 
+    python genotype.py -f ../Database/fpkm_table.tsv -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r ../Database/gene_ranges.tsv -c "chr6:151656691-152129619" 
     
     
 Possible Bugs:
@@ -32,7 +32,6 @@ Possible Bugs:
 
 #%% Imports
 import argparse
-import glob
 import os
 import time
 import re
@@ -50,8 +49,8 @@ parser = argparse.ArgumentParser(prog='assigning genotypes',
                                  description="""Creates a genotype table out of
                                  a location table. Containing genotypes for location x sample.""")
 
-parser.add_argument('--samples', '-s', required=True,
-                    help='folder containing sample folders containing gene.tsv files.')
+parser.add_argument('--fpkm', '-f', required=True,
+                    help='table containing fpkm values for all genes and samples')
 parser.add_argument('--input', '-i', required=True,
                     help="""Input file containing location table.""")
 parser.add_argument('--out', '-o', required=True,
@@ -65,10 +64,6 @@ parser.add_argument('--ranges','-r', required=True, help= "File containing \
 
 args = parser.parse_args()
 
-#Check if input file exists:
-if not os.path.exists(args.samples):
-    print("The input folder is invalid. Did you misstype the directory structure? Try again.")
-    quit()
 
 if args.coordinates:
     if re.search(r'[a-z]{3}[MXY]?\d*:\d+-\d+', args.coordinates):
@@ -102,24 +97,28 @@ while True:
         #There is no problem with this output file name. We proceed with the code.
         break
 """
+
 #Server option
 if os.path.isfile(args.out):
     print("The output file already exists, we assume it is complete.")
     quit()
     
     
-#%% List of gene.tsv's
+#%% Read in fpkm table
 
-#Find all the gene.tsv files in the data folder.
-argument_glob=args.samples+"/**/gene.tsv"
-tsv_list=glob.glob(argument_glob, recursive=True)
-
-#If no tsv files are found, quit the program.
-if len(tsv_list)==0:
-    print("""There were no gene.tsv files found in the input folder. Please make 
-          sure to use the right input folder. The gene.tsv files can be in any 
-          subfolder of the input folder.""")
-    quit()
+fpkms=dict()
+with open(args.fpkm, "r") as fpkm:
+    for line in fpkm:
+        if line.startswith("Location"):
+            #header
+            sample_names=line.split("\t")[1:]
+        #add fpkm values to dictionary.
+        values=line.strip("\n").split("\t")[1:]
+        #initialize dict
+        fpkms[line.split("\t")[0]]=dict()
+        for sample in sample_names:
+            fpkms[line.split("\t")[0]][sample]=values[sample_names.index(sample)]
+        
 
 #%% Dictionary of gene ranges from gene range file (made with gencode and refseq) 
 
@@ -163,8 +162,8 @@ for line in locations:
     if line.startswith("Location"):
         #Thats the column names. We write those and extract sample names.
         sample_names=line.strip("\n").split("\t")[1::]
-        #Write header for output file
-        genotypes.write(line)
+        #Write header for output file + column for gene name!
+        genotypes.write(line.split("\t")[0]+ "\tGene\t"+line.split("\t")[1:])
         
         #Initiate gene walk through, requires sample names.
         #initiate gene counter
@@ -175,30 +174,16 @@ for line in locations:
         fpkm=dict()
         #go through samples
         for sample in sample_names:
-            for tsv in tsv_list:
-                if sample in tsv: 
-                    #Find corresponding gene, save for sample name
-                    file=open(tsv, "r")
-                    #If the gene name is not in the gene.tsv file, we assume not expressed due to no information
-                    gene_found=False
-                    for l in file:
-                        if current_gene in l:
-                            gene_found=True
-                            #save genotype dictionary if fpkm >=10 or not
-                            if float(l.split("\t")[7])>=10:
-                                fpkm[sample]="0/0"
-                            else:
-                                fpkm[sample]="NE"
-                            break
-                    if gene_found==False:
-                        for sample in sample_names:
-                            fpkm[sample]="NE"
-                    file.close()
-        #If for some sample, there was no match of the name found, notice here:
-        for sample in sample_names:
-            if sample not in fpkm:
-                fpkm[sample]=="NE"
-        continue
+            if sample in fpkms[current_gene]:
+                #save genotype dictionary if fpkm >=10 or not
+                if int(fpkms[current_gene][sample])>=10:
+                    fpkm[sample]="0/0"
+                else:
+                    fpkm[sample]="NE"
+                break
+            else:
+                fpkm[sample]="NE"
+
     #Now all that is left is entries. shape: chr_position_ref_(alt)\t samples
     variant_chrom,variant_position = line.split("\t")[0].split("_")[0:2]
     #infostring to use in first column of output.
@@ -220,6 +205,7 @@ for line in locations:
             for i in range(0, len(entries)):
                 if entries[i]=="-":
                     entries[i]="NE"
+            out_gene="intergenic"
             #We found the variant, so we can go to next line
             variant_found=True
         
@@ -231,6 +217,7 @@ for line in locations:
                     sample= sample_names[i]
                     #assign genotype from fpkm dict for corresponding sample
                     entries[i]=fpkm[sample]
+            out_gene=current_gene
             #We found the variant, so we can go to next line
             variant_found=True
         
@@ -244,6 +231,7 @@ for line in locations:
                 for i in range(0, len(entries)):
                     if entries[i]=="-":
                         entries[i]="NE"
+                out_gene="intergenic"
                 variant_found=True
             else:
                 #update gene and range
@@ -253,37 +241,22 @@ for line in locations:
                 fpkm=dict()
                 #go through samples
                 for sample in sample_names:
-                    for tsv in tsv_list:
-                        if sample in tsv: 
-                            #Find corresponding gene, save for sample name
-                            file=open(tsv, "r")
-                            #If the gene name is not in the gene.tsv file, we assume not expressed due to no information
-                            gene_found=False
-                            for l in file:
-                                #wrong chrom skip
-                                if variant_chrom!=l.split("\t")[2]:
-                                    continue
-                                
-                                if current_gene in l:
-                                    gene_found=True
-                                    #save genotype dictionary if fpkm >=10 or not
-                                    if float(l.split("\t")[7])>=10:
-                                        fpkm[sample]="0/0"
-                                    else:
-                                        fpkm[sample]="NE"
-                                    break
-                            if gene_found==False:
-                                for sample in sample_names:
-                                    fpkm[sample]="NE"
-                            file.close()
-                #If for some sample, there was no match of the name found, notice here:
-                for sample in sample_names:
-                    if sample not in fpkm:
-                        fpkm[sample]=="NE"
+                    if sample in fpkms[current_gene]:
+                        #save genotype dictionary if fpkm >=10 or not
+                        if int(fpkms[current_gene][sample])>=10:
+                            fpkm[sample]="0/0"
+                        else:
+                            fpkm[sample]="NE"
+                        break
+                    else:
+                        fpkm[sample]="NE"
             #do not go to next line, as we did not find the variants location in regards to the gene.
     
     #Now that we have replaced all "-" in the line, we write the line out to the output file.
-    genotypes.write(infostring+"\t"+"\t".join(entries)+"\n")
+    genotypes.write(infostring+"\t"+out_gene+"\t".join(entries)+"\n")
+
+
+
 
 
 #%% Close location file and output file.
