@@ -153,8 +153,10 @@ for file in vcf_file_list:
                     continue
             
             else:
-                if int(position)< int(coord_start) or int(position)> int(coord_stop):
+                if int(position)< int(coord_start):
                     continue
+                elif int(position)> int(coord_stop):
+                    break
         
         "Before filtering, add all variants to genotype table."
         variant_ID=chrom+"_"+position
@@ -351,6 +353,7 @@ with open(args.out, "w") as out:
         #Skip to new variant if there is 3 or more alleles.        
         if invalid_variant==True:
             invalid_counter+=1
+            
             continue
         
         #If the new line only has "-" and "ND" then theres no point having it in the output file. as no alternative genotype passed filtering.

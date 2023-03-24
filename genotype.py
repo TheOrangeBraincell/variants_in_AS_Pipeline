@@ -103,22 +103,6 @@ if os.path.isfile(args.out):
     print("The output file already exists, we assume it is complete.")
     quit()
     
-    
-#%% Read in fpkm table
-
-fpkms=dict()
-with open(args.fpkm, "r") as fpkm:
-    for line in fpkm:
-        if line.startswith("Location"):
-            #header
-            sample_names=line.split("\t")[1:]
-        #add fpkm values to dictionary.
-        values=line.strip("\n").split("\t")[1:]
-        #initialize dict
-        fpkms[line.split("\t")[0]]=dict()
-        for sample in sample_names:
-            fpkms[line.split("\t")[0]][sample]=values[sample_names.index(sample)]
-        
 
 #%% Dictionary of gene ranges from gene range file (made with gencode and refseq) 
 
@@ -138,6 +122,28 @@ with open(args.ranges, "r") as ranges:
                 continue
         #Save information in dictionary
         gene_ranges[line.split("\t")[0]]=line.strip("\n").split("\t")[1:]
+        
+#%% Read in fpkm table
+
+fpkms=dict()
+with open(args.fpkm, "r") as fpkm:
+    for line in fpkm:
+        if line.startswith("Location"):
+            #header
+            sample_names=line.split("\t")[1:]
+        
+        #only gene names in range of input coordinates
+        if line.strip("\n").split("\t")[0] not in gene_ranges:
+            continue
+        #That should cut down memory requirement and speed things up further down.
+        #add fpkm values to dictionary.
+        values=line.strip("\n").split("\t")[1:]
+        #initialize dict
+        fpkms[line.split("\t")[0]]=dict()
+        for sample in sample_names:
+            fpkms[line.split("\t")[0]][sample]=values[sample_names.index(sample)]
+        
+
 
 #%% Open location file and output genotype table
 
