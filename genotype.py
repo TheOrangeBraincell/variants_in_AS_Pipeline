@@ -132,8 +132,9 @@ with open(args.fpkm, "r") as fpkm:
     for line in fpkm:
         if line.startswith("Location"):
             #header
-            sample_names=line.split("\t")[1:]
-        
+            sample_names=line.strip("\n").split("\t")[1:]
+            continue
+        #print(sample_names.index("S001298"))        
         #only gene names in range of input coordinates
         if line.strip("\n").split("\t")[0] not in gene_ranges:
             continue
@@ -143,6 +144,8 @@ with open(args.fpkm, "r") as fpkm:
         #initialize dict
         fpkms[line.split("\t")[0]]=dict()
         for sample in sample_names:
+            #if sample=="S001298":
+                #print("The sample is in the header of the fpkm table")
             fpkms[line.split("\t")[0]][sample]=values[sample_names.index(sample)]
         
 print("FPKM file is read in: {:.2f} seconds.".format(time.time()-start_time))
@@ -175,9 +178,9 @@ for line in locations:
         continue
     if line.startswith("Location"):
         #Thats the column names. We write those and extract sample names.
-        sample_names=line.strip("\n").split("\t")[1::]
+        sample_names=line.strip("\n").split("\t")[1:]
         #Write header for output file + column for gene name!
-        genotypes.write(line.split("\t")[0]+ "\tGene\t"+line.split("\t")[1:])
+        genotypes.write(line.split("\t")[0]+ "\tGene\t"+"\t".join(sample_names)+"\n")
         
         #Initiate gene walk through, requires sample names.
         #initiate gene counter
@@ -189,16 +192,20 @@ for line in locations:
         #go through samples
         for sample in sample_names:
             if sample in fpkms[current_gene]:
+                #if sample=="S001298":
+                #    if sample in fpkms[current_gene]:
+                #        print(fpkms[current_gene]["S001298"])
                 #save genotype dictionary if fpkm >=10 or not
-                if int(fpkms[current_gene][sample])>=10:
+                if float(fpkms[current_gene][sample])>=10:
                     fpkm[sample]="0/0"
                 else:
                     fpkm[sample]="NE"
-                break
             else:
                 fpkm[sample]="NE"
-
+        #print(fpkm["S001298"])
+        continue
     #Now all that is left is entries. shape: chr_position_ref_(alt)\t samples
+    #print(line.split("\t")[0].split("_")[0:2])
     variant_chrom,variant_position = line.split("\t")[0].split("_")[0:2]
     #infostring to use in first column of output.
     infostring=line.split("\t")[0]
@@ -230,7 +237,10 @@ for line in locations:
                 if entries[i]=="-":
                     sample= sample_names[i]
                     #assign genotype from fpkm dict for corresponding sample
-                    entries[i]=fpkm[sample]
+                    if sample in fpkm:
+                        entries[i]=fpkm[sample]
+                    else:
+                        entries[i]="NE"
             out_gene=current_gene
             #We found the variant, so we can go to next line
             variant_found=True
@@ -261,7 +271,7 @@ for line in locations:
                 for sample in sample_names:
                     if sample in fpkms[current_gene]:
                         #save genotype dictionary if fpkm >=10 or not
-                        if int(fpkms[current_gene][sample])>=10:
+                        if float(fpkms[current_gene][sample])>=10:
                             fpkm[sample]="0/0"
                         else:
                             fpkm[sample]="NE"
@@ -271,7 +281,7 @@ for line in locations:
             #do not go to next line, as we did not find the variants location in regards to the gene.
     
     #Now that we have replaced all "-" in the line, we write the line out to the output file.
-    genotypes.write(infostring+"\t"+out_gene+"\t".join(entries)+"\n")
+    genotypes.write(infostring+"\t"+out_gene+"\t"+"\t".join(entries)+"\n")
 
 
 print("Genotyping Done!                 \n", end="\r")
