@@ -123,6 +123,8 @@ with open(args.ranges, "r") as ranges:
         #Save information in dictionary
         gene_ranges[line.split("\t")[0]]=line.strip("\n").split("\t")[1:]
         
+        
+print("Gene Ranges dictionary made: {:.2f} seconds.".format(time.time()-start_time))
 #%% Read in fpkm table
 
 fpkms=dict()
@@ -143,7 +145,7 @@ with open(args.fpkm, "r") as fpkm:
         for sample in sample_names:
             fpkms[line.split("\t")[0]][sample]=values[sample_names.index(sample)]
         
-
+print("FPKM file is read in: {:.2f} seconds.".format(time.time()-start_time))
 
 #%% Open location file and output genotype table
 
@@ -156,9 +158,15 @@ if args.coordinates:
 else:
     genotypes.write("#Genotype table per sample for variants in whole genome range\n")
 
+print("Opened input and output file: {:.2f} seconds.".format(time.time()-start_time))
+
 #%% Assign Genotypes
 
 genes=list(gene_ranges.keys())
+total=len(genes)
+count=0
+percentage=100*(count/total)
+print("Genotyping {:.2f}%".format(percentage), end="\r")
 
 #Iterate through lines in location table as well as genes simultaneously..
 for line in locations:
@@ -231,6 +239,10 @@ for line in locations:
         else:          
             #update index:
             current_index+=1
+            #Update on progress
+            count+=1
+            percentage=100*(count/total)
+            print("Genotyping {:.2f}%".format(percentage), end="\r")
             #If last gene, stop
             if current_index>=len(genes):
                 #Then the rest of the entries will be after and thus outside of a gene.
@@ -262,13 +274,15 @@ for line in locations:
     genotypes.write(infostring+"\t"+out_gene+"\t".join(entries)+"\n")
 
 
-
+print("Genotyping Done!                 \n", end="\r")
 
 
 #%% Close location file and output file.
 
 locations.close()
 genotypes.close()
+
+print("Files closed!")
 
 #%% End time
 
