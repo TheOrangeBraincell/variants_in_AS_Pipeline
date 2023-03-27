@@ -30,11 +30,10 @@ gene=input_file.split("_")[0]
 with open(input_file, "r") as infile, open(output_file, "w") as outfile:
     for line in infile:
         if line.startswith("#"):
-            outfile.write(line.split("\t")[0]+ "\tGene\t"+"\t".join(line.strip("\n").split("\t")[1:])+"\n")
             continue
         if line.startswith("Location"):
             if header==False:
-                outfile.write(line)
+                outfile.write(line.split("\t")[0]+ "\tGene\t"+"\t".join(line.strip("\n").split("\t")[1:])+"\n")
                 header=True
             continue
         

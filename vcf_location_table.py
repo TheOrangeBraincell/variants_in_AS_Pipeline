@@ -19,13 +19,13 @@ Procedure:
 Useage: Run in command line
     
     With coordinates for f.e. estrogen receptor:
-        python vcf_location_table.py -s ../Sample_Data/ -o location_table_ESR1.tsv -c "chr6:151656691-152129619"
+        python vcf_location_table.py -s vcf_file_list.txt -o location_table_ESR1.tsv -c "chr6:151656691-152129619"
     
     For whole genome:
-        python vcf_location_table.py -s ../Sample_Data/ -o location_table_WG.tsv
+        python vcf_location_table.py -s vcf_file_list.txt -o location_table_WG.tsv
     
     Server:
-        python vcf_location_table.py -s /raidset/mi3258mu-se/Mirjam -o location_table_WG.tsv
+        python vcf_location_table.py -s vcf_file_list.txt -o location_table_WG.tsv
     
 Possible Bugs:
     
@@ -34,9 +34,7 @@ Possible Bugs:
 
 #%% Imports
 import argparse
-import glob
 import gzip
-import os
 import re
 import time
 
@@ -50,13 +48,13 @@ start_time=time.time()
 "0. Setting up argparse, handling input parameters"
 
 parser = argparse.ArgumentParser(prog='vcf location table',
-                                 usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
+                                 usage='%(prog)s -s INPUT-PATHS -o OUTPUT \
                                      [-c] "chrX:XXXXXX-XXXXXX"',
                                  description="""Creates a location of variants table out of
                                  several samples. Containing location x sample.""")
 
 parser.add_argument('--samples', '-s', required=True,
-                    help='folder containing sample folders containing the vcf files.')
+                    help='file containing the path to the vcf files.')
 parser.add_argument('--out', '-o', required=True,
                     help="""Output file, containing vcf location table.""")
 parser.add_argument('--coordinates', '-c', type=str,
@@ -102,16 +100,13 @@ while True:
 """
 #%% Read vcf file
 
-#Find all the vcf files in the data folder.
-argument_glob=args.samples+"/*/*/*/*/*.vcf.gz"
-vcf_file_list=glob.glob(argument_glob, recursive=True)
+#Read vcf file list off the input file
+vcf_file_list=[]
 
-#If no vcf files are found, quit the program.
-if len(vcf_file_list)==0:
-    print("""There were no vcf files found in the input folder. Please make 
-          sure to use the right input folder. The vcf files can be in any 
-          subfolder of the input folder.""")
-    quit()
+with open(args.samples, "r") as vcf:
+    for line in vcf:
+        vcf_file_list.append(line.strip("\n"))
+
 
 
 chromosomes=["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X", "Y", "M"]
