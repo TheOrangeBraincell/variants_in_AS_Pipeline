@@ -25,6 +25,8 @@ output_file=sys.argv[2]
 #Only put a header once!
 header=False
 
+gene=input_file.split("_")[0]
+
 with open(input_file, "r") as infile, open(output_file, "w") as outfile:
     for line in infile:
         if line.startswith("#"):
@@ -45,6 +47,6 @@ with open(input_file, "r") as infile, open(output_file, "w") as outfile:
             if psi!="NAN":
                 c+=1
         #print(c)
-        #If there is minimum two numerical PSI values in that row, keep it.
+        #If there is minimum two numerical PSI values in that row, keep the row.
         if c>1:
-            outfile.write(line)
+            outfile.write(line.split("\t")[0]+ "\t"+gene+"\t"+"\t".join(line.strip("\n").split("\t")[1:])+"\n")
