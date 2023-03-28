@@ -37,6 +37,7 @@ import argparse
 import gzip
 import re
 import time
+import os
 
 #%% Start Timer
 
@@ -98,6 +99,12 @@ while True:
         #There is no problem with this output file name. We proceed with the code.
         break
 """
+
+#Server option
+if os.path.isfile(args.out):
+    print("The output file already exists, we assume it is complete.")
+    quit()
+    
 #%% Read vcf file
 
 #Read vcf file list off the input file
@@ -110,6 +117,9 @@ with open(args.samples, "r") as vcf:
 
 
 chromosomes=["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X", "Y", "M"]
+
+
+
 if args.coordinates:
     chrom_index=chromosomes.index(coord_chrom.strip("chr"))
 #Initialize dictionaries
@@ -142,7 +152,11 @@ for file in vcf_file_list:
             #we can assume that the chromosomes at least are sorted by appearance. Which means if we are at a chromosome after the one we look for, 
             #we can stop reading the file.
             if chrom != coord_chrom:
-                if chrom_index<chromosomes.index(chrom.strip("chr")):
+                #Theres names given to parts where we arent sure what chromosomes they belong to. Those wont be in the list.
+                #But we also dont want them. So we skip those too.
+                if chrom.strip("chr") not in chromosomes:
+                    continue
+                elif chrom_index<chromosomes.index(chrom.strip("chr")):
                     break
                 else:
                     continue

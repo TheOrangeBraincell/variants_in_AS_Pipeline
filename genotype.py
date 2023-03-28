@@ -189,6 +189,11 @@ for line in locations:
         current_range=gene_ranges[current_gene]
         #Make fpkm dict for this current gene:
         fpkm=dict()
+        #Do we have expression values for this gene?
+        if current_gene not in fpkms:
+            #nope. All NE.
+            for sample in sample_names:
+                fpkm[sample]="NE"
         #go through samples
         for sample in sample_names:
             if sample in fpkms[current_gene]:

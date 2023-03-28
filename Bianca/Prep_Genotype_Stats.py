@@ -25,6 +25,8 @@ with open(input_file, "r") as infile, open(output_file, "w") as outfile:
         if line.startswith("Location"):
             outfile.write(line)
             continue
+        elif line.startswith("#"):
+            outfile.write(line)
         #Flags to check for genotypes
         counts=[line.count("0/0"), line.count("0/1"), line.count("1/1"), line.count("0/2"), line.count("1/2"), line.count("2/2"), line.count("0/3"), line.count("1/3"),
                 line.count("2/3"), line.count("3/3"),]
