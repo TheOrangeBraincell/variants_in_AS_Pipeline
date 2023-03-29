@@ -51,8 +51,11 @@ conda install -c bioconda pysam
 The pipeline was run on a cluster for sensitive data in Uppsala (https://www.uppmax.uu.se/resources/systems/the-bianca-cluster/). It was sped up by running the variant calling file and genotyping step per chromosome. And then the PSI scores step only for set of genes with sufficient expression (FPKM>10).
  
 ### 1. Parsing through variant calling files (.vcf): Extracting Locations
-For this step all .vcf files for all samples to be investigated are needed. The script *vcf_location_table.py* can be used on the whole genome or on a specific set of coordinates.
- 
+For this step all .vcf files for all samples to be investigated are needed. The script *vcf_location_table.py* can be used on the whole genome or on a specific set of coordinates. The vcf file list is created with bash.
+```
+find [Sample Directory] -name "variants-annotated.vcf.gz" > vcf_file_list.txt
+```
+ The script is then according to:
 ```
 usage: vcf location table -s INPUT-FOLDER -o OUTPUT [-c] "chrX:XXXXXX-XXXXXX" 
 
@@ -60,7 +63,7 @@ Creates a location of variants table out of several samples. Containing location
 
 optional arguments:
 -h, --help                                   show this help message and exit
---samples SAMPLES, -s SAMPLES                folder containing sample folders containing the vcf files.
+--samples SAMPLES, -s SAMPLES                file containing the path to the vcf files.
 --out OUT, -o OUT                            Output file, containing vcf location table.
 --coordinates COORDINATES, -c COORDINATES    Start and stop coordinates of region of interest, as well as  chromosome. Format: chr[]:start-stop
 ``` 
@@ -68,19 +71,15 @@ Run with for example:
 
 ```
 #with coordinates
-python vcf_location_table.py -s ../Sample_Data/ -o location_table_ESR1.tsv -c "chr6:151690496-152103274"
+python vcf_location_table.py -s vcf_file_list.txt -o location_table_ESR1.tsv -c "chr6:151690496-152103274"
 
 #without coordinates
-python vcf_location_table.py -s ../Sample_Data/ -o location_table_WG.tsv
+python vcf_location_table.py -s vcf_file_list.txt -o location_table_WG.tsv
 ```
-The output file is a location x sample table, containing genotypes where given by the .vcf files, and spaceholders "-" where there is no matching entry for a sample in a .vcf file.
+The output file is a location x sample table, containing genotypes where given by the .vcf files, and spaceholders "-" where there is no matching entry for a sample in a .vcf file. Note that the entries are sorted and filtered before writing them into files. That way we only keep information on variants that have at least one alternative genotype that passes filtering.
 
 ### 2. Parsing through gene expression files: Assigning Genotypes
-For this step, all gene expression information files for all samples in the location table created in step 1, are needed. These files contain the FPKM per gene and sample. Based on that value, the missing genotypes in the location table are assigned. This is done with the script *genotype.py*. But this script requires the variant location tables to be sorted. So that is done first with bash script *Sort_Locations.sh* to be run in folder with location tables:
-```
-~/Sort_Locations.sh
-```
-The location tables are then saved in a new "Sorted" folder. Furthermore we require an input file giving us the coordinates of each annotated gene found in the RefSeq and GENCODE database. This we create with *gene_ranges.py*:
+For this step, all gene expression information files for all samples in the location table created in step 1, are needed. These files contain the FPKM per gene and sample. To speed up the genotyping script, they were collected in a gene x sample table, containing the FPKM values. Based on that table, the missing genotypes in the location table are assigned. This is done with the script *genotype.py*. For that we require an input file giving us the coordinates of each annotated gene found in the RefSeq and GENCODE database. This we create with *gene_ranges.py*:
 
 ```
 usage: Create gene range tsv -o OUTPUT-FILE -g GENCODE-FILE -r REFSEQ-FILE [-c] "chrX:XXXXXX-XXXXXX"
@@ -96,24 +95,25 @@ optional arguments:
 ```
 Now we are ready to run *genotypes.py*.
 ```
-usage: assigning genotypes -s INPUT-FOLDER -o OUTPUT -i LOCATION-TABLE [-c] "chrX:XXXXXX-XXXXXX"  -r RANGE-TSV 
+python genotype.py --help
+usage: assigning genotypes -s INPUT-FOLDER -o OUTPUT -i LOCATION-TABLE [-c] "chrX:XXXXXX-XXXXXX" -r RANGE-TSV -f FPKM-TABLE
 
 Creates a genotype table out of a location table. Containing genotypes for location x sample.
 
 optional arguments:
--h, --help                                   show this help message and exit
---samples SAMPLES, -s SAMPLES                folder containing sample folders containing gene.tsv files.
---input INPUT, -i INPUT                      Input file containing location table.
---out OUT, -o OUT                            Output file containing genotypes.
---coordinates COORDINATES, -c COORDINATES    Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-stop
---ranges RANGES, -r RANGES                   File containing gene ranges created with refseq and gencode. 
+  -h, --help                                   show this help message and exit
+  --fpkm FPKM, -f FPKM                         table containing fpkm values for all genes and samples
+  --input INPUT, -i INPUT                      Input file containing location table.
+  --out OUT, -o OUT                            Output file containing genotypes.
+  --coordinates COORDINATES, -c COORDINATES    Start and stop coordinates of region of interest, as well as chromosome. Format: chr[]:start-stop
+  --ranges RANGES, -r RANGES                   File containing gene ranges created with refseq and gencode.
 ```
 Run with for example:
 ```
-python genotype.py -s ../Sample_Data/ -i sorted_location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151690496-152103274" 
+python genotype.py -s /Sample_Data/ -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r gene_ranges.tsv -c "chr6:151690496-152103274" -f fpkm_table.tsv
 ```
 
-The result is a complete location x sample table, containing the genotype of every sample at every location.
+The result is a complete location x sample table, containing the genotype of every sample at every location. 
 
 ### 3. Identifying alternative splicing events based on gene annotation
 Based on GENCODE (v 39, hg38) and RefSeq annotation files (hg v38) alternative splicing (AS) events are identified. 
@@ -142,7 +142,7 @@ optional arguments:
 Run with for example:
 ```
 #with coordinates f.e. Estrogen Receptor
- python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
+ python Identify_AS.py -o AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL
 ```
 
 The result is a tab separated file containing alternative splicing events and their coordinates as well as information on what transcript ID and gene name they are found in.
@@ -173,13 +173,27 @@ optional arguments:
 ```
 Run with for example:
 ```
-python variants_in_AS_Pipeline/PSI.py -s ../Sample_Data -i new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL -o ESR1_PSI.tsv
+python PSI.py -s /Sample_Data -i AS_events_ESR1.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL -o ESR1_PSI.tsv
 ```
 The result is a tab separated file containing the location of the event and its type in the first column, and the Samples PSI scores in the remaining columns. 
 
 ### 5. Statistical testing of results
+Before statistical testing, the PSI tables and genotype tables were filtered to only include entries that are relevant for testing. This was done with the *Prep_Genotype_Stats.py* and *Prep_PSI_Stats.py* scripts respectively.
 
-
+```
+python Prep_Genotype_Stats.py INPUT-FILE OUTPUT-FILE
+python Prep_PSI_Stats.py INPUT-FILE OUTPUT-FILE
+```
+The resulting tables have the same layout, but only rows passing filtering conditions.
+Note that the statistics script was run per gene, in an attempt to not overwhelm R.
+```
+Rscript Statistics.R PSI-TABLE GENOTYPE-TABLE GENE-NAME
+```
+This produces a tsv file which contains the gene, variant location, AS_event location and p values. The p values are then corrected with the script *FDR.R* using the total number of tests as input.
+```
+Rscript FDR.R NUMBER-TESTS INPUT-FILE
+```
+The resulting file is identical to the previous, but with an additional column with q values, the for multiple testing corrected p values.
 
 ## Comparing Variants found based on RNA and DNA data
  
