@@ -4,6 +4,7 @@
 
 
 library(tidyverse)
+library(rstatix)
 
 args=commandArgs(trailingOnly=TRUE)
 
@@ -23,17 +24,17 @@ PSI %>%
   mutate("event"=Location) %>% 
   select(!Location) %>% 
   pivot_longer(cols=!c(event, Gene), names_to="Sample", values_to="PSI") %>% 
-  filter(PSI!="NAN")-> PSI_long
+  filter(PSI!="NaN")-> PSI_long
 
 rm(PSI)
 
 genotype %>% 
-  mutate(variant=Location) %>% 
+  mutate("variant"=Location) %>% 
   select(!Location) %>% 
   pivot_longer(cols=!c(variant, Gene), names_to="Sample", values_to="Genotype") %>% 
   filter(Genotype!="NE") %>% 
   filter(Genotype!="ND") %>% 
-  left_join(by=c("Gene", "Sample")) %>% 
+  left_join(PSI_long, by=c("Gene", "Sample")) %>% 
   #Remove rows that either have no PSI or no genotype in that sample
   drop_na() -> comparison_data
 
@@ -46,15 +47,15 @@ comparison_data %>%
   distinct() %>% 
   group_by(Gene, variant, event) %>% 
   count() %>% 
-  filter(n<2) %>%
+  filter(n>1) %>%
   select(!n) %>% 
   left_join(comparison_data, by=c("Gene", "variant", "event")) %>% 
   ungroup() %>% 
-  select(!c(PSI, Genotype)) %>% 
+  select(!c(Sample, Genotype)) %>% 
   distinct() %>% 
   group_by(Gene, variant, event) %>% 
   count() %>% 
-  filter(n<2) %>%
+  filter(n>1) %>%
   select(!n) %>% 
   left_join(comparison_data, by=c("Gene", "variant", "event"))-> full_table
   
@@ -71,7 +72,7 @@ kw_outcomes %>%
   select(-c(data, kw, statistic, parameter, method)) -> kw_save
 
 kw_save %>% 
-  arrange(p.value)
+  arrange(p.value)-> kw_save
 
 write_tsv(
   kw_save,
