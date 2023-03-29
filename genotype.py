@@ -45,7 +45,7 @@ start_time=time.time()
 parser = argparse.ArgumentParser(prog='assigning genotypes',
                                  usage='%(prog)s -s INPUT-FOLDER -o OUTPUT \
                                      -i LOCATION-TABLE [-c] "chrX:XXXXXX-XXXXXX"\
-                                         -r RANGE-TSV',
+                                         -r RANGE-TSV -f FPKM-TABLE',
                                  description="""Creates a genotype table out of
                                  a location table. Containing genotypes for location x sample.""")
 

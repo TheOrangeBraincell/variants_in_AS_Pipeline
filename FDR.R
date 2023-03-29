@@ -6,7 +6,7 @@ library(tidyverse)
 
 args=commandArgs(trailingOnly=TRUE)
 
-number_of_tests<-args[1]
+number_of_tests<-as.integer(args[1])
 file_to_correct<- args[2]
 
 KW_scores<-read_tsv(file_to_correct, show_col_types=FALSE)
