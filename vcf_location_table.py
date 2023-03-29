@@ -155,7 +155,7 @@ for file in vcf_file_list:
                 #Theres names given to parts where we arent sure what chromosomes they belong to. Those wont be in the list.
                 #But we also dont want them. So we skip those too.
                 if chrom.strip("chr") not in chromosomes:
-                    continue
+                    break
                 elif chrom_index<chromosomes.index(chrom.strip("chr")):
                     break
                 else:
