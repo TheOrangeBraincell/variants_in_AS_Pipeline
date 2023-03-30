@@ -13,11 +13,18 @@ As a minimum of 2 PSI values for one event would be needed to make a correlation
 #%% Imports
 
 import sys
+import os
+
 
 #%% Input handling
 
 input_file= sys.argv[1]
 output_file=sys.argv[2]
+
+#Server option: To not overwrite output file. No need to do same job twice.
+if os.path.isfile(output_file):
+    print("The output file already exists, we assume it is complete.")
+    quit()
 
 #%% Filter and output
 

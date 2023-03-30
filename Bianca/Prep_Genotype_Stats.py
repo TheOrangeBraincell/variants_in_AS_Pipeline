@@ -12,11 +12,17 @@ distinct genotypes out of 0/0, 0/1, 1/1.
 #%% Imports
 
 import sys
+import os
 
 #%% Input handling
 
 input_file=sys.argv[1]
 output_file=sys.argv[2]
+
+#Server option: to not overwrite output file.
+if os.path.isfile(output_file):
+    print("The output file already exists, we assume it is complete.")
+    quit()
 
 #%% Write output
 
