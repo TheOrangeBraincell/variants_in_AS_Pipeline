@@ -194,19 +194,20 @@ for line in locations:
             #nope. All NE.
             for sample in sample_names:
                 fpkm[sample]="NE"
-        #go through samples
-        for sample in sample_names:
-            if sample in fpkms[current_gene]:
-                #if sample=="S001298":
-                #    if sample in fpkms[current_gene]:
-                #        print(fpkms[current_gene]["S001298"])
-                #save genotype dictionary if fpkm >=10 or not
-                if float(fpkms[current_gene][sample])>=10:
-                    fpkm[sample]="0/0"
+        else:
+            #go through samples
+            for sample in sample_names:
+                if sample in fpkms[current_gene]:
+                    #if sample=="S001298":
+                    #    if sample in fpkms[current_gene]:
+                    #        print(fpkms[current_gene]["S001298"])
+                    #save genotype dictionary if fpkm >=10 or not
+                    if float(fpkms[current_gene][sample])>=10:
+                        fpkm[sample]="0/0"
+                    else:
+                        fpkm[sample]="NE"
                 else:
                     fpkm[sample]="NE"
-            else:
-                fpkm[sample]="NE"
         #print(fpkm["S001298"])
         continue
     #Now all that is left is entries. shape: chr_position_ref_(alt)\t samples
@@ -277,17 +278,20 @@ for line in locations:
                     #nope. All NE.
                     for sample in sample_names:
                         fpkm[sample]="NE"
-                #go through samples
-                for sample in sample_names:
-                    if sample in fpkms[current_gene]:
-                        #save genotype dictionary if fpkm >=10 or not
-                        if float(fpkms[current_gene][sample])>=10:
-                            fpkm[sample]="0/0"
+                else:
+                    #go through samples
+                    for sample in sample_names:
+                        if sample in fpkms[current_gene]:
+                            #if sample=="S001298":
+                            #    if sample in fpkms[current_gene]:
+                            #        print(fpkms[current_gene]["S001298"])
+                            #save genotype dictionary if fpkm >=10 or not
+                            if float(fpkms[current_gene][sample])>=10:
+                                fpkm[sample]="0/0"
+                            else:
+                                fpkm[sample]="NE"
                         else:
                             fpkm[sample]="NE"
-                        break
-                    else:
-                        fpkm[sample]="NE"
             #do not go to next line, as we did not find the variants location in regards to the gene.
     
     #Now that we have replaced all "-" in the line, we write the line out to the output file.

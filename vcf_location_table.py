@@ -155,12 +155,13 @@ for file in vcf_file_list:
                 #Theres names given to parts where we arent sure what chromosomes they belong to. Those wont be in the list.
                 #But we also dont want them. So we skip those too.
                 if chrom.strip("chr") not in chromosomes:
-                    break
-                elif chrom_index<chromosomes.index(chrom.strip("chr")):
-                    break
-                else:
                     continue
-            
+                else:
+                    if chrom_index<chromosomes.index(chrom.strip("chr")):
+                        break
+                    else:
+                        continue
+                
             else:
                 if int(position)< int(coord_start):
                     continue
@@ -250,6 +251,7 @@ sample_names=sorted(sample_names)
 variant_keys=list(variants.keys())
 sorted_chr_variants=[]
 
+
 #chromosomes have a bit of a specific order, so we do it manually...
 for chromosome in chromosomes:
     for key, value in variants.items():
@@ -270,9 +272,17 @@ del sorted_dict
 
 #%% Write output file
 
+#For some we might not find anything...
+if len(variant_keys)==0:
+    with open(args.out, "w") as out:
+        out.write("#No variants in the range "+args.coordinates + "found. \n")
+        #For R simplicity I still need the header though.
+        out.write("Location\t"+"\t".join(sample_names)+"\n")
+        
+        
 counter=0
 invalid_counter=0
-percentage=100*counter/len(list(variants.keys()))
+percentage=100*counter/len(variant_keys)
 print("Writing Location Table: {:.2f}%".format(percentage),end="\r")
 
 with open(args.out, "w") as out:
