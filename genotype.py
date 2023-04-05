@@ -208,7 +208,7 @@ for line in locations:
                         fpkm[sample]="NE"
                 else:
                     fpkm[sample]="NE"
-        #print(fpkm["S001298"])
+        #print(current_gene, fpkm)
         continue
     #Now all that is left is entries. shape: chr_position_ref_(alt)\t samples
     #print(line.split("\t")[0].split("_")[0:2])
@@ -295,7 +295,9 @@ for line in locations:
             #do not go to next line, as we did not find the variants location in regards to the gene.
     
     #Now that we have replaced all "-" in the line, we write the line out to the output file.
-    genotypes.write(infostring+"\t"+out_gene+"\t"+"\t".join(entries)+"\n")
+    #print(current_gene, entries)
+    if variant_found==True:
+        genotypes.write(infostring+"\t"+out_gene+"\t"+"\t".join(entries)+"\n")
 
 
 print("Genotyping Done!                 \n", end="\r")

@@ -32,7 +32,7 @@ if os.path.isfile(output_file):
 #Only put a header once!
 header=False
 
-gene=input_file.split("_")[0]
+gene=input_file.split("/")[-1].split("_")[0]
 
 with open(input_file, "r") as infile, open(output_file, "w") as outfile:
     for line in infile:

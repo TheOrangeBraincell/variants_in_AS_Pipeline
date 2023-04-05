@@ -20,6 +20,7 @@ Useage: Run in command line
     
     With coordinates for f.e. estrogen receptor:
         python vcf_location_table.py -s vcf_file_list.txt -o location_table_ESR1.tsv -c "chr6:151656691-152129619"
+        chr15:67200666-67255198
     
     For whole genome:
         python vcf_location_table.py -s vcf_file_list.txt -o location_table_WG.tsv
@@ -166,10 +167,12 @@ for file in vcf_file_list:
                 if int(position)< int(coord_start):
                     continue
                 elif int(position)> int(coord_stop):
+                    print(position)
                     break
         
         "Before filtering, add all variants to genotype table."
         variant_ID=chrom+"_"+position
+        print(variant_ID)
         #add to variant dict
         if variant_ID not in variants:
             variants[variant_ID]=dict()
