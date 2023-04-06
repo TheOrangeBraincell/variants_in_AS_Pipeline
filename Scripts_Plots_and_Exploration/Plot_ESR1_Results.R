@@ -16,11 +16,24 @@ head(KW)
 #With correction for all genes, those would still be significant (as there was 17)
 KW %>% 
   filter(p.value<0.00005) %>% 
-  filter(!startsWith(event, "IR")) %>% 
-  head(10)->sign_KW
-  
+  filter(!startsWith(event, "IR")) ->sign_KW
 
-sign_KW
+sign_KW  
+
+#They are all CE so that makes it easy.
+sign_KW %>% 
+  #filter(startsWith(event, "CE")) %>%
+  #check if any variants are within the CE they have significance with.
+  separate(col=event, c("AS", "chrom", "strand", "start", "stop"), sep="_") %>% 
+  select(!c(chrom, strand)) %>% 
+  separate(col=variant, c("chrom", "position"), sep="_") %>% 
+  mutate(start=as.integer(start)) %>% 
+  mutate(stop=as.integer(stop)) %>% 
+  mutate(position=as.integer(position)) %>% 
+  mutate("Same_Exons"=ifelse((position < stop && position > start), T, F)) %>% 
+  filter(Same_Exons==T)
+
+#No variant in the same exon as the event. thats a bit weird. 
 
 #For those 10 we would like to extract PSI and Genotypes to see if having a variant makes the PSI scores smaller or bigger.
 

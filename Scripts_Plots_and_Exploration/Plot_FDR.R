@@ -167,6 +167,9 @@ write_tsv(same_exon,
 #  filter(Gene=="ESR1")
 
 #1 pair in same exon. 
+same_exon %>% 
+  select(!c(exon_start_e, exon_stop_e)) %>% 
+  distinct()
 
 same_exon %>% 
   separate(event, c("A", "B", "C", "D", "E"), sep="_") %>% 
@@ -215,9 +218,58 @@ splice_sites %>%
 
 #841 significantly correlated events with variant in splice region.
 
+#Looking at examples
+
 splice_sites %>% 
-  filter(Gene=="ESR1")
-fdr %>% 
-  filter(!startsWith(event, "IR")) %>% 
-  filter(Gene=="ESR1")
+  filter(event=="CE_chr17_-_7673700_7673837") %>% 
+  filter(variant=="chr17_7673700_C_(A_T_G)")
+
+
+PSI<-read_tsv("Interesting_PSI.tsv") %>% 
+  pivot_longer(cols=!Location, names_to="Sample", values_to="PSI") %>% 
+  filter(!is.nan(PSI))
+
+genotypes<-read_tsv("Interesting_Genotypes.tsv")
+
+splice_sites %>% 
+  right_join(genotypes, by=c("variant"="Location", "Gene")) %>% 
+  select(!c(exon_stop_e, exon_start_e, p.value, q.values)) %>% 
+  pivot_longer(cols=!c(Gene, event, variant), names_to="Sample", values_to="Genotype") %>% 
+  filter(Genotype!="NE") %>% 
+  filter(Genotype!="ND") %>% 
+  right_join(PSI, by=c("event"="Location", "Sample")) -> concat_table
+
+
+#lets see which one of them would be nice. One with several genotypes perhaps?
+
+concat_table %>% 
+  group_by(Gene, event, variant, Genotype) %>% 
+  count() %>% 
+  filter(Gene=="PAK1")
+
+# A tibble: 3 x 5
+# Groups:   Gene, event, variant, Genotype [3]
+# Gene  event                        variant              Genotype     n
+# <chr> <chr>                        <chr>                <chr>    <int>
+#   1 PAK1  CE_chr11_-_77379893_77379994 chr11_77379894_C_(T) 0/0       3121
+# 2 PAK1  CE_chr11_-_77379893_77379994 chr11_77379894_C_(T) 0/1        108
+# 3 PAK1  CE_chr11_-_77379893_77379994 chr11_77379894_C_(T) 1/1          9
+
+#Its the only one who has more than 1 alternative allele.... -.-
+
+concat_table %>% 
+  filter(Gene=="TP53") %>% 
+  mutate(Genotype=as.factor(Genotype)) %>% 
+  ggplot(aes(x=Genotype, y=PSI))+
+  theme_classic()+
+  geom_boxplot()+
+  geom_point()+
+  ylim(0.8, 1)
+
+#This ones interesting cause its associated with like half the cancers out there.
+#So having a mutation spot, especially one where every nucleotide is found, is cool
+
+#But the numbers are low, which makes sense when the gene is important and its a mutation.
+#Maybe see if we can find an example that has more numbers on the alternative allele?
+
 
