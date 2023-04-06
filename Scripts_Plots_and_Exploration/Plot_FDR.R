@@ -269,7 +269,72 @@ concat_table %>%
 #This ones interesting cause its associated with like half the cancers out there.
 #So having a mutation spot, especially one where every nucleotide is found, is cool
 
-#But the numbers are low, which makes sense when the gene is important and its a mutation.
-#Maybe see if we can find an example that has more numbers on the alternative allele?
+#So this one is actually a known variant, causing intron retention in the space after. 
+#which ofc we dont have reliable psi scores for -.-
+#But it could be proof at least that we find it?
 
 
+#Fishing for other examples (note that the files are overwritten...)
+PSI<-read_tsv("Interesting_PSI.tsv") %>% 
+  distinct() %>% 
+  pivot_longer(cols=!Location, names_to="Sample", values_to="PSI") %>% 
+  filter(!is.nan(PSI))
+
+genotypes<-read_tsv("Interesting_Genotypes.tsv") %>% 
+  distinct() %>% 
+  pivot_longer(cols=!c(Location, Gene), names_to="Sample", values_to="Genotype") %>% 
+  filter(Genotype!="NE") %>% 
+  filter(Genotype!="ND")
+
+splice_sites %>% 
+  select(!c(exon_start_e, exon_stop_e)) %>% 
+  distinct() %>% 
+  left_join(genotypes, by=c("Gene", "variant"="Location")) %>% 
+  left_join(PSI, by=c("event"="Location", "Sample")) -> concat_table
+  
+concat_table %>% 
+  select(!c(p.value,q.values)) %>% 
+  group_by(Gene, event, variant, Genotype) %>% 
+  count() %>%
+  filter(n>10) %>% 
+  filter(n<3444) %>%
+  #arrange(desc(n)) %>% 
+  group_by(Gene, event, variant) %>% 
+  count() %>% 
+  filter(n>1) -> candidates
+
+candidates %>% 
+  ungroup() %>% 
+  select(Gene) %>% 
+  left_join(concat_table) %>% 
+  select(!c())
+  group_by(Gene, event, variant, Genotype) %>% 
+  count()-> overview
+  
+concat_table %>% 
+  filter(Gene=="APIP") %>% 
+  mutate(Genotype=as.factor(Genotype)) %>% 
+  ggplot(aes(x=Genotype, y=PSI))+
+  theme_classic()+
+  geom_jitter(aes(col=Genotype))+
+  geom_boxplot(alpha = 0.8)+
+  theme(text = element_text(size = 20), axis.text=element_text(size=20))
+
+concat_table %>% 
+  filter(Gene=="APIP") %>% 
+  mutate(Genotype=as.factor(Genotype)) %>% 
+  group_by(Gene, event, variant, Genotype) %>% 
+  count()
+
+#rs61734605 from C to T
+
+# # A tibble: 3 x 5
+# # Groups:   Gene, event, variant, Genotype [3]
+# Gene  event                        variant                Genotype     n
+# <chr> <chr>                        <chr>                  <fct>    <int>
+#   1 APIP  CE_chr11_-_34895009_34895110 chr11_34895110_C_(T_A) 0/0        583
+# 2 APIP  CE_chr11_-_34895009_34895110 chr11_34895110_C_(T_A) 0/1       1408
+# 3 APIP  CE_chr11_-_34895009_34895110 chr11_34895110_C_(T_A) 1/1        395
+
+splice_sites %>% 
+  filter(Gene=="APIP")
