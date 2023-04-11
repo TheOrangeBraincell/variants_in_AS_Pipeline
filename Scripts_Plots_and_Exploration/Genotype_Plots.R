@@ -45,8 +45,69 @@ ggplot(subset_fractions, aes(x=m, y=Fraction, group=Genotype, color=Genotype))+
   geom_point(size=2)+
   theme_classic()+
   xlab("Random subset of variants sorted by frequency of 0/0")+
-  theme(text = element_text(size = 20), axis.text=element_text(size=20))+
-  ylab("Fractions of genotype")+
+  theme(text = element_text(size = 25), axis.text=element_text(size=25))+
+  ylab("Fractions of genotypes assigned")+
   labs(color = "Genotype") +
   scale_color_brewer(labels = c("1/1", "0/1", "0/0"), palette ="Accent")
  
+
+#Lets try another. like the OG of genotype plots I had made. (That showed us it was wrong ._.)
+
+GT_DF %>% 
+  mutate(total=as.integer(A)+as.integer(B)+as.integer(C)) %>% 
+  mutate(percentage=total/3455 *100) %>% 
+  mutate(bin=case_when(percentage<1 ~ "<1",
+                       percentage>=1 & percentage<=10 ~ "1-10",
+                       percentage>10 & percentage<=20 ~ "11-20",
+                       percentage>20 & percentage<=30 ~ "21-30",
+                       percentage>30 & percentage<=40 ~ "31-40",
+                       percentage>40 & percentage<=50 ~ "41-50",
+                       percentage>50 & percentage<=60 ~ "51-60",
+                       percentage>60 & percentage<=70 ~ "61-70",
+                       percentage>70 & percentage<=80 ~ "71-80",
+                       percentage>80 & percentage<=90 ~ "81-90",
+                       percentage>90 & percentage<=100 ~ "91-100")) -> binned_data
+  #The fraction would have to be over the total amount in that location bin...
+binned_data %>% 
+  select(!c(total, percentage)) %>%
+  pivot_longer(cols=!c(Gene, Location, bin), names_to="Genotype", values_to="Counts") %>% 
+  select(!c(Gene, Location)) %>% 
+  group_by(bin, Genotype) %>% 
+  mutate(n=as.integer(Counts)) %>% 
+  select(!Counts) %>% 
+  summarise(sum_counts=sum(n)) %>% 
+  pivot_wider(names_from=Genotype, values_from=sum_counts) %>% 
+  mutate(total=A+B+C) %>% 
+  mutate(hmzr=A/total) %>% 
+  mutate(hetz=B/total) %>% 
+  mutate(hmza=C/total) %>% 
+  select(!c(A, B, C, total)) %>% 
+  pivot_longer(cols=!c(bin), names_to="Genotype", values_to="Fraction")-> GT_histo
+
+# binned_data %>%   
+#   group_by(bin) %>% 
+#   summarise(sum_counts=sum(total)) %>% 
+#   left_join(binned_data) %>% 
+#   mutate(hmza=as.integer(C)/sum_counts) %>% 
+#   mutate(hetz=as.integer(B)/sum_counts) %>% 
+#   mutate(hmzr=as.integer(A)/sum_counts) %>% 
+#   select(!c(A, B, C, total, sum_counts)) %>% 
+#   mutate(bin=factor(bin,levels = c("<1","1-10", "11-20", "21-30", "31-40","41-50","51-60","61-70","71-80","81-90","91-100", ">100"))) %>% 
+#   pivot_longer(cols=!c(Location, percentage, bin, Gene), names_to="Genotype", values_to="Fraction") %>% 
+#   select(!c(Gene, Location))-> GT_histo
+
+GT_histo
+
+
+ggplot(GT_histo, aes(fill=factor(Genotype, levels=c("hmzr", "hetz", "hmza")), y=Fraction, x=bin)) + 
+  theme_classic()+
+  geom_bar(position="stack", stat="identity") +
+  scale_color_brewer(palette = "BuPu")+
+  scale_fill_brewer(name = "Genotype", labels = c("0/0", "0/1", "1/1")) +
+  xlab("Location found in percentage of samples")+
+  ylab("Fractions of genotypes assigned")+
+  theme(text = element_text(size = 25), axis.text=element_text(size=25))+
+  #geom_text(aes(label = ..count..), stat = "count", position="stack", vjust =1.5 )+
+  scale_x_discrete(guide=guide_axis(n.dodge=2))
+
+

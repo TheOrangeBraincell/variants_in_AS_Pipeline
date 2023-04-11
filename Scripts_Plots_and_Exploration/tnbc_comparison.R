@@ -128,7 +128,7 @@ ggplot(dna_exons, aes(fill=factor(Match, levels=c("absent", "unfiltered", "filte
   theme_classic()+
   #scale_fill_viridis(discrete = T, name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
   xlab("FPKM values")+
-  ylab("%Variants found")+
+  ylab("Fraction of variants found")+
   scale_color_brewer(palette = "BuPu")+
   scale_fill_brewer(name = "Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
   ggtitle("Variants found in DNA data, that are also found in RNA data")+
