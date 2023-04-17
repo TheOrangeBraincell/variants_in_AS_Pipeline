@@ -128,7 +128,7 @@ ggplot(dna_exons, aes(fill=factor(Match, levels=c("absent", "unfiltered", "filte
   theme_classic()+
   #scale_fill_viridis(discrete = T, name = "Fraction of Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
   xlab("FPKM values")+
-  ylab("Fraction of variants found")+
+  ylab("%Variants found")+
   scale_color_brewer(palette = "BuPu")+
   scale_fill_brewer(name = "Variants found in", labels = c("DNA", "DNA + RNA unfiltered", "DNA + RNA filtered"))+
   ggtitle("Variants found in DNA data, that are also found in RNA data")+
@@ -283,7 +283,7 @@ ggplot(dna_rna, aes(fill=factor(Pass_Fail, levels=c("Pass", "Fail")), x=Filter))
   scale_fill_brewer(name = "Variants which", labels = c("Pass", "Fail"), palette="BuPu")+
   ggtitle("Matching variants between DNA and RNA data removed by filtering")+
   geom_bar(position="fill")+
-  theme(text = element_text(size = 15), axis.text.x = element_text(angle = 45, hjust=1))+
+  theme(text = element_text(size = 20), axis.text=element_text(size=15), axis.text.x = element_text(angle = 45, hjust=1))+
   geom_text(aes(label = ..count..), stat = "count", position="fill", vjust =1.5 )+
   scale_x_discrete(labels=c("GC-content>78%","HMPOL>5","low-complexity flag", "MSI>6", "quality score<55", "ucsc-repetitive flag", "Variant Depth <5"))
 
