@@ -6,7 +6,9 @@ Author: Mirjam Karlsson-Müller
 
 Description: Prepares PSI output tables for statistical testing, by removing rows with <2 numerical PSI values.
 As a minimum of 2 PSI values for one event would be needed to make a correlation test possible.
-    
+
+Useage:
+    python Prep_PSI_Stats.py ESR1_PSI.tsv ESR1_counts.tsv
 
 """
 

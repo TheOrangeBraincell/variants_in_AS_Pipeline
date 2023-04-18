@@ -7,6 +7,9 @@ Author: Mirjam Karlsson-Müller
 
 Description: Filters genotype entries for statistical testing. Only keeps locations that have minimum 2
 distinct genotypes out of 0/0, 0/1, 1/1. 
+
+Useage
+    python Prep_Genotype_Stats.py ESR1_genotype_table.tsv ESR1_GT_counts.tsv
 """
 
 #%% Imports
