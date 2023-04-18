@@ -17,6 +17,9 @@ Procedure:
     
 Useage:
     #with coordinates f.e. Estrogen Receptor
+    python variants_in_AS_Pipeline/gene_ranges.py -o gene_ranges.tsv -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -c "chr6:151656691-152129619"
+    
+    #without
     python variants_in_AS_Pipeline/gene_ranges.py -o gene_ranges.tsv -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv
     
 Possible Bugs:
@@ -24,11 +27,9 @@ Possible Bugs:
 #%% Imports
 
 import argparse
-import glob
 import re
 import time
-import os
-import math
+
 
 
 #%% Time
@@ -173,7 +174,7 @@ for gene in gene_dict:
 #%% Write gene ranges into output file.
 
 with open(args.out, "w") as out:
-    out.write("Gene\tStrand\tstart\tstop\n")
+    out.write("Gene\tChrom\tStrand\tstart\tstop\n")
     for gene in gene_ranges:
         out.write(gene+"\t"+"\t".join([str(i) for i in gene_ranges[gene]])+"\n")
 

@@ -6,7 +6,7 @@ Author: Mirjam Karlsson-Müller
 
 Description:
     Creates a table containing all fpkm scores in the 3455 samples per gene name.
-    
+    I.e. Gene x Samples, containing fpkm scores read from samples gene.tsv files.
     
 List of Functions:
     none

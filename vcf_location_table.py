@@ -9,24 +9,27 @@ Description:
     variants found (filtered and unfiltered).
     Outputs a table sample x location.
     
+Abbreviations:
+    ND not enough data. Assigned when variant is found for sample, but does not pass filtering.
+    0/1 heterozygous (can also be 0/2 etc)
+    1/1 homozygous alternative (can also be 2/2 etc)
+    
 List of Functions:
+    none
     
 Procedure: 
-    1. Argparse
-    2. Read in variant calling files, generate table (incomplete) of all found locations/variants.
-    3. Print said table into a file.
+    1. Read in variant calling files, generate table (incomplete) of all found locations/variants.
+    2. Sort entries
+    3. Print entries into a file. Entries with only "ND" and "-" entries are not written into the output file.
     
 Useage: Run in command line
     
     With coordinates for f.e. estrogen receptor:
-        python vcf_location_table.py -s vcf_file_list.txt -o location_table_ESR1.tsv -c "chr6:151656691-152129619"
-        chr15:67200666-67255198
+        python variants_in_AS_Pipeline/vcf_location_table.py -s vcf_file_list.txt -o location_table_ESR1.tsv -c "chr6:151656691-152129619"
     
     For whole genome:
         python vcf_location_table.py -s vcf_file_list.txt -o location_table_WG.tsv
     
-    Server:
-        python vcf_location_table.py -s vcf_file_list.txt -o location_table_WG.tsv
     
 Possible Bugs:
     
@@ -167,12 +170,12 @@ for file in vcf_file_list:
                 if int(position)< int(coord_start):
                     continue
                 elif int(position)> int(coord_stop):
-                    print(position)
+                    #print(position)
                     break
         
         "Before filtering, add all variants to genotype table."
         variant_ID=chrom+"_"+position
-        print(variant_ID)
+        #print(variant_ID)
         #add to variant dict
         if variant_ID not in variants:
             variants[variant_ID]=dict()

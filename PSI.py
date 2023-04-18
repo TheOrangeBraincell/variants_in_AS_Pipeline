@@ -5,7 +5,7 @@ File Name: PSI.py
 Author: Mirjam Karlsson-Müller
 
 Description:
-
+    Takes a table of AS events and scores them for each sample in the input folder, based on the reads in their bam files.
 
 Abbreviations:
     AS=     Alternative Splicing
@@ -36,17 +36,14 @@ List of Functions:
         Returns PSI score as string for easier writing and allowing for NAN
     
 Procedure: 
-    1.
-    2.
-    3.
+    One big loop where the script iterates through the entries, scores them for all samples and then prints the line right away into the output.
     
 Useage:
-    python variants_in_AS_Pipeline/PSI.py -s ../Sample_Data -i new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL
-    
-    #atm only works for -AS ALL
-    
+    python variants_in_AS_Pipeline/PSI.py -s ../Sample_Data -i AS_events_ESR1.tsv -o ESR1_PSI.tsv -c "chr6:151656691-152129619" -is "Mean 231.467 Standard Deviation 92.8968" -as ALL
     
 Possible Bugs:
+    
+    
 """
 
 #%% Imports

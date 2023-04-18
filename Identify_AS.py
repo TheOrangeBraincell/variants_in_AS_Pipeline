@@ -22,19 +22,19 @@ List of Functions:
         Specific cases for plus and negative strand.
     
 Procedure: 
-    1. Creates a dictionary with genes and their annotated exons from databases GENCODE and RefSeq.
+    1. Creates a dictionary with genes, transcripts and their annotated exons from databases GENCODE and RefSeq.
     2. Going through this dictionary, finds potential AS events:
         AD/AA: Find exons with overlap, put them into AA, AD dictionary according to type of overlap and strand.
         CE: Every exon thats not first or last is a potential CE.
-        IR: Every space between two exons in a transcript can be a potential IR event.
+        IR: Every space between two exons in the same transcript can be a potential IR event.
 
     
 Useage:
     Inputs:
         - Database files for GENCODE and RefSeq respectively
         - output file name for table of eventlocations/types
-        - evtl. coordinates of a gene/region of interest
-        - What type of alternative splicing event are we identifying? Multiple possible in listformat
+        - opt. coordinates of a gene/region of interest
+        - What type of alternative splicing event are we identifying? Multiple possible in listformat. Or ALL for all AS types.
         - If IR is one of the AS events, requires mean and sd of intron size.
         - Whether bed file is wished for
     
@@ -47,10 +47,10 @@ Useage:
         Run in command line. For example.
         
         #with coordinates f.e. Estrogen Receptor
-        python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL 
+        python variants_in_AS_Pipeline/Identify_AS.py -o AS_events_ESR1.tsv -c "chr6:151656691-152129619" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL 
         
         #With coordinates f.e. BRCA1 (neg strand)
-        python variants_in_AS_Pipeline/Identify_AS.py -o new_PSI_script/AS_events_BRCA1.tsv -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL -is "Mean 231.467 Standard Deviation 92.8968" -ra new_PSI_script/gene_ranges.tsv
+        python variants_in_AS_Pipeline/Identify_AS.py -o AS_events_BRCA1.tsv -c "chr17:43044295-43170245" -g Database/hg38_GENCODE39_all.tsv -r Database/hg38_NCBI_all.tsv -as ALL 
         
        
     
@@ -149,7 +149,8 @@ if args.AS:
     if "IR" in inputs and "CE" not in inputs:
         print("Casette exons (CE) will also be identified as needed for PSI score calculation of intron retention (IR).")
         inputs.append("CE")
-#Sort inputs
+        
+#Sort inputs so that CE will be scored before IR.
 inputs=sorted(inputs)
 
 
@@ -383,7 +384,7 @@ for gene in gene_dict:
                 
                 """If the start or stop is shared with another exon, then we found potential AS.
                 But one of the exons can also be completely within another exon, or completely
-                surrounding the other one. Or having one coordinate within the other. That also counts"""
+                surrounding the other one. Or having one coordinate within the other. That also counts. So we find any type of overlap"""
                 
                 for coordinate in coordinates:
                     key_string=str(coordinate)+"_"+str(coordinates[coordinate])

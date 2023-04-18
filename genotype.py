@@ -5,7 +5,7 @@ File Name: genotype.py
 Author: Mirjam Karlsson-Müller
 
 Description:
-    Assigns genotypes NE or 0/0 to location table entries marked with "-"
+    Assigns genotypes NE (not expressed) or 0/0 (homozygous reference) to location table entries marked with "-"
     
 List of Functions:
     none
@@ -22,11 +22,11 @@ Input:
 
 Useage:
     for ESR1 f.e.
-    python genotype.py -f ../Database/fpkm_table.tsv -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r ../Database/gene_ranges.tsv -c "chr6:151656691-152129619" 
+    python variants_in_AS_Pipeline/genotype.py -f Database/fpkm_table.tsv -i location_table_ESR1.tsv -o genotype_table_ESR1.tsv -r Database/gene_ranges.tsv -c "chr6:151656691-152129619"
     
     
 Possible Bugs:
-    location tables need to be created by vcf_location_table.py and sorted with Sort_Location.sh
+    location tables need to be created by vcf_location_table.py
     gene_ranges.tsv needs to be created with gene_ranges.py
 """
 
@@ -77,7 +77,7 @@ if args.coordinates:
                                          wrong format. Input as 
                                          chrX:XXXX-XXXX.""")
         quit()
-""" Manual option. Need server option.
+""" Manual option: Interactive at console
 #Check if output file already exists.
 while True:
     if os.path.isfile(args.out):
@@ -98,7 +98,7 @@ while True:
         break
 """
 
-#Server option
+#Server option: Make sure no outputs are accidentally deleted.
 if os.path.isfile(args.out):
     print("The output file already exists, we assume it is complete.")
     quit()
