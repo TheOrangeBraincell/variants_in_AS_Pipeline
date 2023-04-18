@@ -16,9 +16,10 @@ This is a pipeline developed to analyze the effect of genetic variants in breast
 
 1. Collecting variant locations from all samples' .vcf files.
 2. Determining genotypes for samples without variant at specific variant location.
-3. Identifying AS events based on GENCODE and RefSeq gene annotation files. Scoring these events based on samples' .bam files.
-4. Linking Events to PSI scores.
-5. Statistical Testing
+3. Identifying AS events based on GENCODE and RefSeq gene annotation files. 
+4. Scoring these events based on samples' .bam files.
+5. Preparing genotype tables and PSI tables for statistics.
+6. Statistical Testing
 
 ### Requirements
 The RNA data comes from the SCAN-B cohort. Alignment, variant calling and gene expression files were used.
@@ -48,7 +49,7 @@ conda install -c bioconda pysam
  * sample set of gene expression information files (gene.tsv) from the SCAN-B initiative.
  
 #### Computational Power
-The pipeline was run on a cluster for sensitive data in Uppsala (https://www.uppmax.uu.se/resources/systems/the-bianca-cluster/). It was sped up by running the variant calling file and genotyping step per chromosome. And then the PSI scores step only for set of genes with sufficient expression (FPKM>10).
+The pipeline was run on a cluster for sensitive data in Uppsala (https://www.uppmax.uu.se/resources/systems/the-bianca-cluster/). It was sped up by running the steps only for set of 10,699 genes with sufficient expression (FPKM>10).
  
 ### 1. Parsing through variant calling files (.vcf): Extracting Locations
 For this step all .vcf files for all samples to be investigated are needed. The script *vcf_location_table.py* can be used on the whole genome or on a specific set of coordinates. The vcf file list is created with bash.
@@ -195,13 +196,23 @@ Rscript FDR.R NUMBER-TESTS INPUT-FILE
 ```
 The resulting file is identical to the previous, but with an additional column with q values, the for multiple testing corrected p values.
 
+
+### Novel Splice Sites (Not a part of the pipeline)
+The script *splice_junctions.py* has been written to identify novel splice sites based on patient .bam files. This is how to run it on a bam file:
+```
+ python splice_junctions.py -b alignment.bam -db hg38_GENCODE39.bed -o test_out.txt -c "chr6:151690496-152103274"
+```
+Due to the time constraint, this approach has not been pursued further. 
+
 ## Comparing Variants found based on RNA and DNA data
  
+ This is not a part of the pipeline, but decisions for the pipeline have been made based on this comparison. So it is included here with stepwise instructions.
  
 ### Requirements
  The RNA variants come from the SCAN-B cohort and the DNA variants can be found on https://data.mendeley.com/datasets/2mn4ctdpxp/3 (article for corresponding study at https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6859071/). The comparison was made based on 248 overlapping samples.
 
-Both Python (v.3.9.7) and R (v.4.1.1) were used.
+Both 
+(v.3.9.7) and R (v.4.1.1) were used.
 
 #### Python Packages
 * argparse
