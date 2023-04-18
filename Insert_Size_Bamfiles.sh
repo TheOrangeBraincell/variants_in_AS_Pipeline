@@ -18,6 +18,6 @@ cat Database/gencode.v39.annotation.gff3| grep "three_prime_UTR" | awk 'BEGIN{OF
 #
 for i in ../Sample_Data/*/*/*/*.bam; do samtools view $i -L Database/3_UTR.bed -h -f PROPER_PAIR -F UNMAP,SECONDARY,QCFAIL --subsample 0.25 | head -n 500000| samtools stats | grep -A 1 "insert size average"; done >average_insert.txt #
 #
-#5 Now the averages have to be averaged (beautiful word) and the standard deviations as well
+#5 Now the averages have to be averaged and the standard deviations as well
 awk 'BEGIN{FS="\t"} (NR %2 == 1) {s+=$3} (NR %2 == 0) {sd+=$3^2} END{print("Mean", s/(NR/2) , "Standard Deviation", sqrt(sd/(NR/2)))}' average_insert.txt
 #Mean X Standard Deviation Y
