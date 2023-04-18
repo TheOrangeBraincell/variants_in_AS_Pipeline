@@ -24,12 +24,23 @@ variants %>%
 variants %>% 
   ggplot(aes(x=DP, y=AF))+ geom_point()
 
+#Can we do a heatmap of that?
+
+#custom_breaks <- function(limits){
+#  print(limits)
+#  breaks<-abs(log10(limits))
+#  return(breaks)
+#}
 
 
 variants %>%
   filter(chrom=="chr6") %>% 
   ggplot(aes(x=DP, y=AF) ) +
   geom_density_2d_filled()#+
+  #scale_fill_gradient(trans="log")
+  #stat_density_2d(aes(fill = ..level..), geom = "polygon") +
+  #scale_fill_manual(limits=c(0,0.12), breaks=function(lims){seq(abs(log10(lims[1])), abs(log10(lims[2])))})
+  #scale_fill_viridis_c()
 
 
 #if we exclude the top right corner, we sort of can. 

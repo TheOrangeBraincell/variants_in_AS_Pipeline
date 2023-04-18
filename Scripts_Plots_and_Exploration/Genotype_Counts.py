@@ -6,7 +6,8 @@ Author: Mirjam Karlsson-Müller
 
 
 Description: Filters genotype entries for statistical testing. Only keeps locations that have minimum 2
-distinct genotypes out of 0/0, 0/1, 1/1. 
+distinct genotypes out of 0/0, 0/1, 1/1 (incl 0/2, 2/2, 1/2 etc)
+
 """
 
 #%% Imports

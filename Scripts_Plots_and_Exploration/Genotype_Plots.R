@@ -1,6 +1,11 @@
 # Genotype Tables Plot
 # 07-04-23
 # Mirjam Karlsson-Müller
+#
+# Description: Plots output of Genotyping tables. Prepped with genotype_Counts.py, 
+# whose output files we are reading in here. Shows the fractions of genotypes determined.
+# 
+
 
 
 library(tidyverse)
@@ -84,17 +89,6 @@ binned_data %>%
   select(!c(A, B, C, total)) %>% 
   pivot_longer(cols=!c(bin), names_to="Genotype", values_to="Fraction")-> GT_histo
 
-# binned_data %>%   
-#   group_by(bin) %>% 
-#   summarise(sum_counts=sum(total)) %>% 
-#   left_join(binned_data) %>% 
-#   mutate(hmza=as.integer(C)/sum_counts) %>% 
-#   mutate(hetz=as.integer(B)/sum_counts) %>% 
-#   mutate(hmzr=as.integer(A)/sum_counts) %>% 
-#   select(!c(A, B, C, total, sum_counts)) %>% 
-#   mutate(bin=factor(bin,levels = c("<1","1-10", "11-20", "21-30", "31-40","41-50","51-60","61-70","71-80","81-90","91-100", ">100"))) %>% 
-#   pivot_longer(cols=!c(Location, percentage, bin, Gene), names_to="Genotype", values_to="Fraction") %>% 
-#   select(!c(Gene, Location))-> GT_histo
 
 GT_histo
 

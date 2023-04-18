@@ -2,15 +2,15 @@
 # Mirjam Karlsson-Müller
 # 30.01.23
 #
-# Description: 
-#
+# Description: Script to plot the FPKM values per gene for exploration and to find the 10,699 that have required expression
+# for pipeline.
 #
 
 library(tidyverse)
 setwd("C:\\Users\\mirja\\Documents\\University\\Master Thesis\\R and outputs")
 
 fpkm_data<-read_tsv("fpkm_table.tsv")
-genes<-read_tsv("gene_ranges.tsv")
+genes<-read_tsv("Database\\gene_ranges.tsv")
 
 head(fpkm_data)
 head(genes)
@@ -46,11 +46,11 @@ histo_data %>%
   select("Location")->output
 
 
-
 #Merge with gene ranges to find coordinates of these genes.
 output%>% 
   left_join(genes, by=c("Location"="Gene")) %>% 
   group_by(Chrom) %>% 
+  #count()
   arrange(Chrom, start) %>% 
   drop_na()-> genes_of_interest
 

@@ -1,8 +1,9 @@
-# Bin PSI counts per AS event
 # Bin_PSI.R
 # Mirjam Karlsson-Müller
 # 04-04-23
-
+# Description: To Plot the psi scores, read input table and make counts per bin, depending on how the PSI score is.
+#
+#Useage: Rscript Bin_PSI.R ESR1_PSI.tsv ESR1_counts.tsv ESR1
 
 library(tidyverse)
 
@@ -12,7 +13,7 @@ PSI_file<-args[1]
 Output<-args[2]
 gene <- args[3]
 
-
+# Read, pivot, remove NaN psi scores and then bin them
 psi<-read_tsv(PSI_file) %>%
   #mutate(Gene=gene) %>% 
   pivot_longer(cols=!c(Location), names_to="Sample", values_to="PSI") %>% 
@@ -33,6 +34,7 @@ psi<-read_tsv(PSI_file) %>%
                        PSI>0.9 & PSI<=1 ~ "[0.9-1]")) %>% 
   group_by(event, bin) %>% 
   count() %>% 
+  #Write into output file 
   write_tsv(Output, na = "NA",
             quote = "none",
             escape = c("double", "backslash", "none"),

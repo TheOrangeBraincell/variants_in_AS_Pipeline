@@ -1,6 +1,10 @@
 # Plot_FDR.R
 #Mirjam Karlsson-Müller
 # 04.04.23
+#
+# Description: Plotting the statistical test results after correcting with FDR.
+# For one example, which is chosen through the script, boxplots for the psi and genotypes are made.
+#
 
 library(tidyverse)
 library(GenomicRanges)
